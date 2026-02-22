@@ -78,49 +78,92 @@ str_concat:
     push rbx
     push r12
     push r13
+    push r14
+    push r15
+    
+    mov r12, rdi            ; r12 = s1 (first string)
+    mov r13, rsi            ; r13 = s2 (second string)
     
     ; Get lengths
-    mov r12, [rdi - 8]      ; len1
-    mov r13, [rsi - 8]      ; len2
+    mov r14, [rdi - 8]      ; r14 = len1
+    mov r15, [rsi - 8]      ; r15 = len2
     
-    ; Calculate total length
-    lea rax, [r12 + r13]
-    add rax, 9              ; +8 for length header, +1 for null terminator
+    ; Calculate total size needed:
+    ; 8 bytes (length header) + len1 + len2 + 1 (null terminator)
+    lea rax, [r14 + r15]
+    add rax, 9              ; header + null
     
-    ; Allocate memory (syscall 12 = brk, or use malloc if available)
-    ; For now, use brk to allocate
-    mov rdi, 0
-    mov rax, 12             ; sys_brk
-    syscall                  ; get current brk
+    ; Align to 16 bytes for better memory alignment
+    add rax, 15
+    and rax, ~15
     
-    mov rbx, rax            ; save current brk
-    add rax, r12
-    add rax, r13
-    add rax, 17             ; header + null + alignment
+    ; Allocate memory using mmap (more reliable than brk)
+    mov rdi, 0              ; addr = NULL
+    mov rsi, rax            ; size
+    mov rdx, 0x3            ; prot = PROT_READ | PROT_WRITE
+    mov r10, 0x22           ; flags = MAP_PRIVATE | MAP_ANONYMOUS
+    mov r8, -1              ; fd = -1
+    mov r9, 0               ; offset = 0
+    mov rax, 9              ; sys_mmap
+    syscall
     
-    mov rdi, rax
-    mov rax, 12             ; sys_brk
-    syscall                  ; extend brk
+    ; Check for allocation failure
+    cmp rax, -1
+    je .concat_error
     
-    ; rbx now points to our new string memory
-    ; Store length at offset 0
-    lea rax, [r12 + r13]
-    mov [rbx], rax
+    mov rbx, rax            ; rbx = allocated memory base
+    
+    ; Store total length in header (8 bytes before data)
+    lea rax, [r14 + r15]
+    mov [rbx], rax          ; Store length at offset 0
     
     ; Copy first string data (starts at rbx + 8)
-    lea rdx, [rbx + 8]      ; destination
-    mov rsi, rdi            ; source (original rdi was s1)
-    ; Actually we need to save original s1 pointer
-    ; Let's use the stack
-    mov rax, [rbp + 16]     ; get original s1 from stack (first arg)
-    ; Wait, let's restructure this
+    lea rdi, [rbx + 8]      ; dest = data area
+    mov rsi, r12            ; src = s1
+    mov rcx, r14            ; length = len1
     
-    ; Revert to simpler approach - just return a pointer for now
-    ; Full implementation would need proper memory allocation
+    ; Copy s1 byte by byte
+.copy_s1:
+    test rcx, rcx
+    jz .copy_s2_start
+    mov al, [rsi]
+    mov [rdi], al
+    inc rdi
+    inc rsi
+    dec rcx
+    jmp .copy_s1
     
-    mov rax, rbx
-    add rax, 8              ; return pointer to data (after length header)
+.copy_s2_start:
+    ; Copy second string
+    lea rdi, [rbx + 8 + r14]  ; dest = after s1 data
+    mov rsi, r13              ; src = s2
+    mov rcx, r15              ; length = len2
     
+.copy_s2:
+    test rcx, rcx
+    jz .concat_finish
+    mov al, [rsi]
+    mov [rdi], al
+    inc rdi
+    inc rsi
+    dec rcx
+    jmp .copy_s2
+    
+.concat_finish:
+    ; Add null terminator
+    lea rdi, [rbx + 8 + r14 + r15]
+    mov byte [rdi], 0
+    
+    ; Return pointer to data (after length header)
+    lea rax, [rbx + 8]
+    jmp .concat_done
+    
+.concat_error:
+    xor rax, rax            ; Return NULL on error
+    
+.concat_done:
+    pop r15
+    pop r14
     pop r13
     pop r12
     pop rbx

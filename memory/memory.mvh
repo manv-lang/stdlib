@@ -166,3 +166,24 @@ bytes<2> TYPE_ID_ARENA_REF = 0x0031;
 int GC_DEFAULT_THRESHOLD = 1048576;  // 1MB
 int ARENA_DEFAULT_CAPACITY = 4096;    // 4KB
 int ARENA_DEFAULT_ALIGNMENT = 16;
+
+// ============================================
+// Memory Utility Functions
+// ============================================
+
+// Copies n bytes from src to dest. Returns dest.
+// Note: Does NOT handle overlapping regions - use mem_move for that
+fn mem_copy(dest: void*, src: void*, n: int) -> void*;
+
+// Sets n bytes of dest to value. Returns dest.
+fn mem_set(dest: void*, value: int, n: int) -> void*;
+
+// Compares n bytes of s1 and s2.
+// Returns: 0 if equal, <0 if s1 < s2, >0 if s1 > s2
+fn mem_compare(s1: void*, s2: void*, n: int) -> int;
+
+// Copies n bytes from src to dest, handling overlapping regions.
+fn mem_move(dest: void*, src: void*, n: int) -> void*;
+
+// Zeros n bytes of dest. Returns dest.
+fn mem_zero(dest: void*, n: int) -> void*;

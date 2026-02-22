@@ -152,3 +152,6 @@ fn bytes_get(b: bytes*, index: int) -> Option<int>;
 
 // Sets byte at index
 fn bytes_set(b: bytes*, index: int, value: int) -> void;
+
+// Note: For memory utilities (mem_copy, mem_set, mem_compare, mem_move, mem_zero),
+// include "memory/memory.mvh" from the stdlib.
