@@ -531,3 +531,274 @@ fn float_to_str(x: float) -> str* {
     
     // Count integer digits
     int int_digits = 0;
+    int temp = int_part;
+    if (temp == 0) {
+        int_digits = 1;
+    } else {
+        while (temp > 0) {
+            int_digits = int_digits + 1;
+            temp = temp / 10;
+        }
+    }
+    
+    // Total length: sign + int digits + decimal point + 6 fractional digits
+    int total_len = int_digits + 1 + 6;  // +1 for decimal point
+    if (is_negative) {
+        total_len = total_len + 1;
+    }
+    
+    // Allocate memory
+    int alloc_size = 8 + total_len + 1;
+    alloc_size = (alloc_size + 15) & ~15;
+    
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    if (mapped == -1) return 0;
+    
+    int* len_header = mapped;
+    *len_header = total_len;
+    str* result = mapped + 8;
+    
+    int pos = 0;
+    
+    // Add sign if negative
+    if (is_negative) {
+        result[0] = 45;  // '-'
+        pos = 1;
+    }
+    
+    // Write integer part
+    int int_start = pos;
+    if (int_part == 0) {
+        result[pos] = 48;  // '0'
+        pos = pos + 1;
+    } else {
+        // Write digits from right to left
+        int digit_end = pos + int_digits;
+        pos = digit_end;
+        temp = int_part;
+        while (temp > 0) {
+            pos = pos - 1;
+            result[pos] = 48 + (temp % 10);
+            temp = temp / 10;
+        }
+        pos = digit_end;
+    }
+    
+    // Add decimal point
+    result[pos] = 46;  // '.'
+    pos = pos + 1;
+    
+    // Write fractional part (6 digits)
+    int frac_digit = 0;
+    while (frac_digit < 6) {
+        frac_part = frac_part * 10.0;
+        int digit = float_trunc(frac_part) as int;
+        result[pos] = 48 + digit;
+        frac_part = frac_part - (digit as float);
+        pos = pos + 1;
+        frac_digit = frac_digit + 1;
+    }
+    
+    // Null terminator
+    result[total_len] = 0;
+    
+    return result;
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// float_sign(float x) -> float
+// -----------------------------------------------------------------------------
+// Returns the sign of a float.
+//
+// Parameters:
+//   x: The float to check
+//
+// Returns:
+//   -1.0 if x < 0
+//    0.0 if x = 0
+//    1.0 if x > 0
+//
+// Example:
+//   float_sign(-3.14);  // Returns -1.0
+//   float_sign(0.0);    // Returns 0.0
+//   float_sign(2.71);   // Returns 1.0
+// -----------------------------------------------------------------------------
+fn float_sign(x: float) -> float {
+    if (x < 0.0) {
+        return -1.0;
+    }
+    if (x > 0.0) {
+        return 1.0;
+    }
+    return 0.0;
+}
+
+// -----------------------------------------------------------------------------
+// float_lerp(float a, float b, float t) -> float
+// -----------------------------------------------------------------------------
+// Linear interpolation between two values.
+//
+// Computes: a + t * (b - a)
+//
+// Parameters:
+//   a: Start value
+//   b: End value
+//   t: Interpolation factor (0.0 to 1.0)
+//
+// Returns:
+//   Interpolated value
+//
+// Example:
+//   float_lerp(0.0, 10.0, 0.5);   // Returns 5.0
+//   float_lerp(10.0, 20.0, 0.0);  // Returns 10.0
+//   float_lerp(10.0, 20.0, 1.0);  // Returns 20.0
+// -----------------------------------------------------------------------------
+fn float_lerp(a: float, b: float, t: float) -> float {
+    return a + t * (b - a);
+}
+
+// -----------------------------------------------------------------------------
+// float_inv_lerp(float a, float b, float value) -> float
+// -----------------------------------------------------------------------------
+// Inverse linear interpolation.
+//
+// Returns the t value such that lerp(a, b, t) = value.
+//
+// Parameters:
+//   a:     Start value
+//   b:     End value
+//   value: Value to find t for
+//
+// Returns:
+//   t value (may be outside [0, 1] if value is outside [a, b])
+//
+// Example:
+//   float_inv_lerp(0.0, 10.0, 5.0);   // Returns 0.5
+//   float_inv_lerp(0.0, 10.0, 0.0);   // Returns 0.0
+//   float_inv_lerp(0.0, 10.0, 10.0);  // Returns 1.0
+// -----------------------------------------------------------------------------
+fn float_inv_lerp(a: float, b: float, value: float) -> float {
+    if (a == b) {
+        return 0.0;  // Avoid division by zero
+    }
+    return (value - a) / (b - a);
+}
+
+// -----------------------------------------------------------------------------
+// float_remapproportion(float in_min, float in_max, float out_min, float out_max, float value) -> float
+// -----------------------------------------------------------------------------
+// Maps a value from one range to another.
+//
+// Parameters:
+//   in_min:  Input range minimum
+//   in_max:  Input range maximum
+//   out_min: Output range minimum
+//   out_max: Output range maximum
+//   value:   Value to remap
+//
+// Returns:
+//   Value mapped to output range
+//
+// Example:
+//   // Map 0.5 from [0,1] to [0,100]
+//   float_remap(0.0, 1.0, 0.0, 100.0, 0.5);  // Returns 50.0
+// -----------------------------------------------------------------------------
+fn float_remap(in_min: float, in_max: float, out_min: float, out_max: float, value: float) -> float {
+    float t = float_inv_lerp(in_min, in_max, value);
+    return float_lerp(out_min, out_max, t);
+}
+
+// -----------------------------------------------------------------------------
+// float_degrees(float radians) -> float
+// -----------------------------------------------------------------------------
+// Converts radians to degrees.
+//
+// Parameters:
+//   radians: Angle in radians
+//
+// Returns:
+//   Angle in degrees
+//
+// Example:
+//   float_degrees(PI);      // Returns 180.0
+//   float_degrees(PI / 2);  // Returns 90.0
+// -----------------------------------------------------------------------------
+fn float_degrees(radians: float) -> float {
+    return radians * 180.0 / PI;
+}
+
+// -----------------------------------------------------------------------------
+// float_radians(float degrees) -> float
+// -----------------------------------------------------------------------------
+// Converts degrees to radians.
+//
+// Parameters:
+//   degrees: Angle in degrees
+//
+// Returns:
+//   Angle in radians
+//
+// Example:
+//   float_radians(180.0);  // Returns PI
+//   float_radians(90.0);   // Returns PI / 2
+// -----------------------------------------------------------------------------
+fn float_radians(degrees: float) -> float {
+    return degrees * PI / 180.0;
+}
+
+// -----------------------------------------------------------------------------
+// float_approx_equal(float a, float b, float epsilon) -> bool
+// -----------------------------------------------------------------------------
+// Checks if two floats are approximately equal.
+//
+// Due to floating-point precision, exact equality comparisons often fail.
+// This function checks if the difference is within a tolerance.
+//
+// Parameters:
+//   a:       First float
+//   b:       Second float
+//   epsilon: Tolerance (maximum allowed difference)
+//
+// Returns:
+//   true if |a - b| <= epsilon, false otherwise
+//
+// Example:
+//   float_approx_equal(0.1 + 0.2, 0.3, 1e-9);  // Returns true
+//   float_approx_equal(1.0, 2.0, 0.1);         // Returns false
+// -----------------------------------------------------------------------------
+fn float_approx_equal(a: float, b: float, epsilon: float) -> bool {
+    float diff = float_abs(a - b);
+    return diff <= epsilon;
+}
+
+// -----------------------------------------------------------------------------
+// float_copy_sign(float magnitude, float sign) -> float
+// -----------------------------------------------------------------------------
+// Copies the sign from one float to another.
+//
+// Returns a value with the magnitude of the first argument
+// and the sign of the second argument.
+//
+// Parameters:
+//   magnitude: The value whose magnitude to use
+//   sign:      The value whose sign to copy
+//
+// Returns:
+//   |magnitude| with sign of sign
+//
+// Example:
+//   float_copy_sign(3.0, -1.0);   // Returns -3.0
+//   float_copy_sign(-5.0, 2.0);   // Returns 5.0
+// -----------------------------------------------------------------------------
+fn float_copy_sign(magnitude: float, sign: float) -> float {
+    float abs_mag = float_abs(magnitude);
+    if (sign < 0.0) {
+        return -abs_mag;
+    }
+    return abs_mag;
+}
