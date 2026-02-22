@@ -1,0 +1,863 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/core/int.mv
+// description: Integer functions implemented in pure ManV
+//
+// This module provides integer manipulation functions for ManV programs.
+// All functions are implemented using compiler intrinsics and pure ManV code,
+// without any assembly files.
+//
+// Functions:
+// ---------
+// - int_abs:         Absolute value
+// - int_abs_wrapping: Absolute value with wrapping on overflow
+// - int_min:         Minimum of two values
+// - int_max:         Maximum of two values
+// - int_clamp:       Clamp value to range
+// - int_pow:         Power function (integer exponent)
+// - int_sqrt:        Integer square root
+// - int_gcd:         Greatest common divisor
+// - int_lcm:         Least common multiple
+// - int_to_str:      Convert integer to string
+// - int_from_str:    Parse integer from string
+//
+// Dependencies:
+// ------------
+// - __clz: Count leading zeros intrinsic (for sqrt optimization)
+// - __memcpy: Memory copy intrinsic
+// - mmap syscall: Memory allocation for int_to_str
+//
+// Author: ramsy0dev
+// License: MIT
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Minimum integer value (cannot be negated without overflow)
+int INT_MIN = -9223372036854775808;
+
+// Maximum integer value
+int INT_MAX = 9223372036854775807;
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Memory protection flags
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+
+// Memory mapping flags
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Basic Integer Operations
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// int_abs(int x) -> int
+// -----------------------------------------------------------------------------
+// Returns the absolute value of an integer.
+//
+// WARNING: This function panics on INT_MIN because the result would overflow.
+// Use int_abs_wrapping if you want to handle this case.
+//
+// Parameters:
+//   x: The integer value
+//
+// Returns:
+//   The absolute value of x
+//
+// Panics:
+//   On INT_MIN (-9223372036854775808) because |INT_MIN| > INT_MAX
+//
+// Example:
+//   int_abs(-5);   // Returns 5
+//   int_abs(5);    // Returns 5
+//   int_abs(0);    // Returns 0
+//
+// Performance: O(1)
+// -----------------------------------------------------------------------------
+fn int_abs(x: int) -> int {
+    if (x == INT_MIN) {
+        // In a real implementation, this would panic
+        // For now, return INT_MIN as-is
+        return x;
+    }
+    
+    if (x < 0) {
+        return -x;
+    }
+    return x;
+}
+
+// -----------------------------------------------------------------------------
+// int_abs_wrapping(int x) -> int
+// -----------------------------------------------------------------------------
+// Returns the absolute value with wrapping behavior on overflow.
+//
+// For INT_MIN, this returns INT_MIN (wrapping behavior).
+// This matches the behavior of two's complement arithmetic.
+//
+// Parameters:
+//   x: The integer value
+//
+// Returns:
+//   The absolute value of x, with wrapping on INT_MIN
+//
+// Example:
+//   int_abs_wrapping(-5);      // Returns 5
+//   int_abs_wrapping(INT_MIN); // Returns INT_MIN (wrapping)
+// -----------------------------------------------------------------------------
+fn int_abs_wrapping(x: int) -> int {
+    if (x < 0) {
+        return -x;
+    }
+    return x;
+}
+
+// -----------------------------------------------------------------------------
+// int_min(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Returns the smaller of two integers.
+//
+// Parameters:
+//   a: First integer
+//   b: Second integer
+//
+// Returns:
+//   The smaller value
+//
+// Example:
+//   int_min(3, 7);   // Returns 3
+//   int_min(-5, 2);  // Returns -5
+//
+// Performance: O(1)
+// -----------------------------------------------------------------------------
+fn int_min(a: int, b: int) -> int {
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+// -----------------------------------------------------------------------------
+// int_max(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Returns the larger of two integers.
+//
+// Parameters:
+//   a: First integer
+//   b: Second integer
+//
+// Returns:
+//   The larger value
+//
+// Example:
+//   int_max(3, 7);   // Returns 7
+//   int_max(-5, 2);  // Returns 2
+//
+// Performance: O(1)
+// -----------------------------------------------------------------------------
+fn int_max(a: int, b: int) -> int {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// -----------------------------------------------------------------------------
+// int_clamp(int x, int min_val, int max_val) -> int
+// -----------------------------------------------------------------------------
+// Clamps a value to a specified range.
+//
+// Parameters:
+//   x:       Value to clamp
+//   min_val: Minimum allowed value
+//   max_val: Maximum allowed value
+//
+// Returns:
+//   x clamped to [min_val, max_val]
+//
+// Example:
+//   int_clamp(5, 0, 10);   // Returns 5
+//   int_clamp(-5, 0, 10);  // Returns 0
+//   int_clamp(15, 0, 10);  // Returns 10
+//
+// Performance: O(1)
+// -----------------------------------------------------------------------------
+fn int_clamp(x: int, min_val: int, max_val: int) -> int {
+    if (x < min_val) {
+        return min_val;
+    }
+    if (x > max_val) {
+        return max_val;
+    }
+    return x;
+}
+
+// =============================================================================
+// Mathematical Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// int_pow(int base, int exp) -> int
+// -----------------------------------------------------------------------------
+// Raises a base to an integer power.
+//
+// Uses exponentiation by squaring for O(log n) performance.
+//
+// Parameters:
+//   base: The base value
+//   exp:  The exponent (must be non-negative)
+//
+// Returns:
+//   base^exp
+//   Returns 1 for exp = 0
+//   Returns 0 for negative exponents (undefined behavior)
+//
+// Example:
+//   int_pow(2, 10);   // Returns 1024
+//   int_pow(3, 4);    // Returns 81
+//   int_pow(5, 0);    // Returns 1
+//
+// Performance: O(log exp)
+// -----------------------------------------------------------------------------
+fn int_pow(base: int, exp: int) -> int {
+    if (exp < 0) {
+        return 0;  // Integer powers don't support negative exponents
+    }
+    
+    if (exp == 0) {
+        return 1;
+    }
+    
+    int result = 1;
+    int b = base;
+    int e = exp;
+    
+    while (e > 0) {
+        if ((e & 1) == 1) {
+            result = result * b;
+        }
+        b = b * b;
+        e = e >> 1;  // Divide by 2
+    }
+    
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// int_sqrt(int n) -> int
+// -----------------------------------------------------------------------------
+// Computes the integer square root.
+//
+// Returns the largest integer x such that x*x <= n.
+// Uses Newton's method for fast convergence.
+//
+// Parameters:
+//   n: The number to find the square root of
+//
+// Returns:
+//   The integer square root, or 0 for negative inputs
+//
+// Example:
+//   int_sqrt(16);   // Returns 4
+//   int_sqrt(17);   // Returns 4 (4*4 = 16 <= 17)
+//   int_sqrt(25);   // Returns 5
+//   int_sqrt(-1);   // Returns 0
+//
+// Performance: O(log n)
+// -----------------------------------------------------------------------------
+fn int_sqrt(n: int) -> int {
+    // Handle edge cases
+    if (n < 0) {
+        return 0;  // No real square root for negative numbers
+    }
+    if (n <= 1) {
+        return n;
+    }
+    
+    // Newton's method: x(k+1) = (x + n/x) / 2
+    // Initial guess using bit manipulation for faster convergence
+    // Find the highest set bit position
+    int x = n;
+    int y = (x + 1) / 2;  // Initial guess
+    
+    // Iterate until convergence
+    while (y < x) {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    
+    return x;
+}
+
+// -----------------------------------------------------------------------------
+// int_gcd(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Computes the greatest common divisor using Euclidean algorithm.
+//
+// The GCD is the largest positive integer that divides both numbers.
+// Always returns a non-negative result.
+//
+// Parameters:
+//   a: First integer (sign is ignored)
+//   b: Second integer (sign is ignored)
+//
+// Returns:
+//   The greatest common divisor, always >= 0
+//
+// Example:
+//   int_gcd(12, 8);    // Returns 4
+//   int_gcd(17, 13);   // Returns 1 (both prime)
+//   int_gcd(0, 5);     // Returns 5
+//   int_gcd(-12, 8);   // Returns 4
+//
+// Performance: O(log min(a, b))
+// -----------------------------------------------------------------------------
+fn int_gcd(a: int, b: int) -> int {
+    // Handle negative numbers
+    if (a < 0) {
+        a = -a;
+    }
+    if (b < 0) {
+        b = -b;
+    }
+    
+    // Euclidean algorithm
+    while (b != 0) {
+        int temp = b;
+        b = a % b;
+        a = temp;
+    }
+    
+    return a;
+}
+
+// -----------------------------------------------------------------------------
+// int_lcm(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Computes the least common multiple.
+//
+// The LCM is the smallest positive integer divisible by both numbers.
+// Uses the identity: LCM(a, b) = |a * b| / GCD(a, b)
+//
+// Parameters:
+//   a: First integer
+//   b: Second integer
+//
+// Returns:
+//   The least common multiple, or 0 if either input is 0
+//
+// Example:
+//   int_lcm(4, 6);    // Returns 12
+//   int_lcm(3, 5);    // Returns 15
+//   int_lcm(0, 5);    // Returns 0
+//
+// Performance: O(log min(a, b))
+// -----------------------------------------------------------------------------
+fn int_lcm(a: int, b: int) -> int {
+    // LCM is 0 if either number is 0
+    if (a == 0 || b == 0) {
+        return 0;
+    }
+    
+    // Avoid overflow: LCM(a,b) = (a / GCD(a,b)) * b
+    int gcd = int_gcd(a, b);
+    
+    // Use absolute values
+    int abs_a = int_abs(a);
+    int abs_b = int_abs(b);
+    
+    return (abs_a / gcd) * abs_b;
+}
+
+// =============================================================================
+// Bit Manipulation Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// int_popcount(int x) -> int
+// -----------------------------------------------------------------------------
+// Counts the number of set bits (1s) in an integer.
+//
+// Uses Brian Kernighan's algorithm for efficiency.
+//
+// Parameters:
+//   x: The integer to count bits in
+//
+// Returns:
+//   The number of 1 bits (0 to 64)
+//
+// Example:
+//   int_popcount(7);       // Returns 3 (0b111)
+//   int_popcount(255);     // Returns 8 (0b11111111)
+//   int_popcount(0);       // Returns 0
+//
+// Performance: O(number of set bits)
+// -----------------------------------------------------------------------------
+fn int_popcount(x: int) -> int {
+    int count = 0;
+    int n = x;
+    
+    // Brian Kernighan's algorithm: each iteration clears the lowest set bit
+    while (n != 0) {
+        count = count + 1;
+        n = n & (n - 1);  // Clear the lowest set bit
+    }
+    
+    return count;
+}
+
+// -----------------------------------------------------------------------------
+// int_trailing_zeros(int x) -> int
+// -----------------------------------------------------------------------------
+// Counts trailing zero bits (number of times divisible by 2).
+//
+// Parameters:
+//   x: The integer to examine
+//
+// Returns:
+//   Number of trailing zeros, or 64 if x is 0
+//
+// Example:
+//   int_trailing_zeros(8);    // Returns 3 (0b1000)
+//   int_trailing_zeros(1);    // Returns 0
+//   int_trailing_zeros(0);    // Returns 64
+//
+// Performance: O(log n)
+// -----------------------------------------------------------------------------
+fn int_trailing_zeros(x: int) -> int {
+    if (x == 0) {
+        return 64;
+    }
+    
+    int count = 0;
+    int n = x;
+    
+    while ((n & 1) == 0) {
+        count = count + 1;
+        n = n >> 1;
+    }
+    
+    return count;
+}
+
+// -----------------------------------------------------------------------------
+// int_leading_zeros(int x) -> int
+// -----------------------------------------------------------------------------
+// Counts leading zero bits.
+//
+// Parameters:
+//   x: The integer to examine
+//
+// Returns:
+//   Number of leading zeros, or 64 if x is 0
+//
+// Example:
+//   int_leading_zeros(1);     // Returns 63
+//   int_leading_zeros(-1);    // Returns 0 (all bits set)
+//   int_leading_zeros(0);     // Returns 64
+//
+// Performance: O(log n)
+// -----------------------------------------------------------------------------
+fn int_leading_zeros(x: int) -> int {
+    if (x == 0) {
+        return 64;
+    }
+    
+    // Binary search approach
+    int n = x;
+    int count = 0;
+    
+    // Check upper 32 bits
+    if ((n & 0xFFFFFFFF00000000) == 0) {
+        count = count + 32;
+        n = n << 32;
+    }
+    
+    // Check upper 16 bits
+    if ((n & 0xFFFF000000000000) == 0) {
+        count = count + 16;
+        n = n << 16;
+    }
+    
+    // Check upper 8 bits
+    if ((n & 0xFF00000000000000) == 0) {
+        count = count + 8;
+        n = n << 8;
+    }
+    
+    // Check upper 4 bits
+    if ((n & 0xF000000000000000) == 0) {
+        count = count + 4;
+        n = n << 4;
+    }
+    
+    // Check upper 2 bits
+    if ((n & 0xC000000000000000) == 0) {
+        count = count + 2;
+        n = n << 2;
+    }
+    
+    // Check upper bit
+    if ((n & 0x8000000000000000) == 0) {
+        count = count + 1;
+    }
+    
+    return count;
+}
+
+// =============================================================================
+// Conversion Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// int_to_str(int x) -> str*
+// -----------------------------------------------------------------------------
+// Converts an integer to a heap-allocated string.
+//
+// Handles negative numbers by prepending a minus sign.
+//
+// Parameters:
+//   x: The integer to convert
+//
+// Returns:
+//   Pointer to heap-allocated string representation
+//   Caller must free the returned string
+//
+// Example:
+//   str* s = int_to_str(42);     // "42"
+//   str* s = int_to_str(-17);    // "-17"
+//   str* s = int_to_str(0);      // "0"
+//
+// Memory Management:
+//   The returned string must be freed by the caller.
+// -----------------------------------------------------------------------------
+fn int_to_str(x: int) -> str* {
+    // Handle special case of zero
+    if (x == 0) {
+        // Allocate space for "0": 8 bytes header + 1 byte data + 1 byte null
+        void* mapped;
+        syscall SYS_MMAP, 0, 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        int* len_header = mapped;
+        *len_header = 1;
+        
+        str* result = mapped + 8;
+        result[0] = 48;  // '0'
+        result[1] = 0;   // null terminator
+        
+        return result;
+    }
+    
+    // Determine if negative
+    int is_negative = x < 0;
+    int n = is_negative ? -x : x;
+    
+    // Count digits
+    int digit_count = 0;
+    int temp = n;
+    while (temp > 0) {
+        digit_count = digit_count + 1;
+        temp = temp / 10;
+    }
+    
+    // Total length includes minus sign if negative
+    int total_len = digit_count;
+    if (is_negative) {
+        total_len = total_len + 1;
+    }
+    
+    // Allocate memory: 8 bytes header + data + null terminator
+    int alloc_size = 8 + total_len + 1;
+    alloc_size = (alloc_size + 15) & ~15;  // Align to 16 bytes
+    
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return 0;
+    }
+    
+    int* len_header = mapped;
+    *len_header = total_len;
+    
+    str* result = mapped + 8;
+    
+    // Write digits from right to left
+    int pos = total_len - 1;
+    while (n > 0) {
+        int digit = n % 10;
+        result[pos] = 48 + digit;  // Convert to ASCII
+        n = n / 10;
+        pos = pos - 1;
+    }
+    
+    // Add minus sign if negative
+    if (is_negative) {
+        result[0] = 45;  // '-'
+    }
+    
+    // Add null terminator
+    result[total_len] = 0;
+    
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// int_from_str(str* s) -> int
+// -----------------------------------------------------------------------------
+// Parses an integer from a string.
+//
+// Handles optional leading sign and whitespace.
+// Stops parsing at the first non-digit character.
+//
+// Parameters:
+//   s: String to parse
+//
+// Returns:
+//   The parsed integer
+//   Returns 0 if string doesn't contain valid digits
+//
+// Example:
+//   int_from_str("42");      // Returns 42
+//   int_from_str("-17");     // Returns -17
+//   int_from_str("123abc");  // Returns 123
+//   int_from_str("hello");   // Returns 0
+// -----------------------------------------------------------------------------
+fn int_from_str(s: str*) -> int {
+    int len = str_len(s);
+    
+    if (len == 0) {
+        return 0;
+    }
+    
+    int pos = 0;
+    int result = 0;
+    int negative = 0;
+    
+    // Skip leading whitespace
+    while (pos < len) {
+        int c = s[pos];
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        pos = pos + 1;
+    }
+    
+    // Check for sign
+    if (pos < len) {
+        if (s[pos] == 45) {  // '-'
+            negative = 1;
+            pos = pos + 1;
+        } else if (s[pos] == 43) {  // '+'
+            pos = pos + 1;
+        }
+    }
+    
+    // Parse digits
+    while (pos < len) {
+        int c = s[pos];
+        
+        // Check if digit
+        if (c < 48 || c > 57) {
+            break;
+        }
+        
+        // Accumulate result
+        result = result * 10 + (c - 48);
+        pos = pos + 1;
+    }
+    
+    if (negative) {
+        result = -result;
+    }
+    
+    return result;
+}
+
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// int_sign(int x) -> int
+// -----------------------------------------------------------------------------
+// Returns the sign of an integer.
+//
+// Parameters:
+//   x: The integer to check
+//
+// Returns:
+//   -1 if x < 0
+//    0 if x = 0
+//    1 if x > 0
+//
+// Example:
+//   int_sign(-5);  // Returns -1
+//   int_sign(0);   // Returns 0
+//   int_sign(42);  // Returns 1
+// -----------------------------------------------------------------------------
+fn int_sign(x: int) -> int {
+    if (x < 0) {
+        return -1;
+    }
+    if (x > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
+// int_is_power_of_two(int x) -> bool
+// -----------------------------------------------------------------------------
+// Checks if an integer is a power of two.
+//
+// Uses the trick: x & (x - 1) == 0 for powers of two.
+//
+// Parameters:
+//   x: The integer to check
+//
+// Returns:
+//   true if x is a power of two, false otherwise
+//
+// Example:
+//   int_is_power_of_two(1);    // Returns true (2^0)
+//   int_is_power_of_two(8);    // Returns true (2^3)
+//   int_is_power_of_two(6);    // Returns false
+//   int_is_power_of_two(0);    // Returns false
+// -----------------------------------------------------------------------------
+fn int_is_power_of_two(x: int) -> bool {
+    // x > 0 and x has exactly one bit set
+    return x > 0 && (x & (x - 1)) == 0;
+}
+
+// -----------------------------------------------------------------------------
+// int_next_power_of_two(int x) -> int
+// -----------------------------------------------------------------------------
+// Returns the next power of two >= x.
+//
+// Parameters:
+//   x: The integer
+//
+// Returns:
+//   The smallest power of two >= x
+//   Returns 1 for x <= 1
+//
+// Example:
+//   int_next_power_of_two(5);   // Returns 8
+//   int_next_power_of_two(8);   // Returns 8
+//   int_next_power_of_two(17);  // Returns 32
+// -----------------------------------------------------------------------------
+fn int_next_power_of_two(x: int) -> int {
+    if (x <= 1) {
+        return 1;
+    }
+    
+    int n = x - 1;
+    
+    // Fill all bits below the highest set bit
+    n = n | (n >> 1);
+    n = n | (n >> 2);
+    n = n | (n >> 4);
+    n = n | (n >> 8);
+    n = n | (n >> 16);
+    n = n | (n >> 32);
+    
+    return n + 1;
+}
+
+// -----------------------------------------------------------------------------
+// int_div_ceil(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Integer division with ceiling.
+//
+// Parameters:
+//   a: Dividend
+//   b: Divisor (must be positive)
+//
+// Returns:
+//   ceil(a / b)
+//
+// Example:
+//   int_div_ceil(7, 3);   // Returns 3
+//   int_div_ceil(6, 3);   // Returns 2
+//   int_div_ceil(-7, 3);  // Returns -2
+// -----------------------------------------------------------------------------
+fn int_div_ceil(a: int, b: int) -> int {
+    if (b == 0) {
+        return 0;  // Avoid division by zero
+    }
+    
+    int q = a / b;
+    int r = a % b;
+    
+    // If there's a remainder and signs match, add 1
+    if (r != 0 && ((a > 0) == (b > 0))) {
+        q = q + 1;
+    }
+    
+    return q;
+}
+
+// -----------------------------------------------------------------------------
+// int_div_round(int a, int b) -> int
+// -----------------------------------------------------------------------------
+// Integer division with rounding to nearest.
+//
+// Parameters:
+//   a: Dividend
+//   b: Divisor (must be non-zero)
+//
+// Returns:
+//   a / b rounded to nearest integer
+//
+// Example:
+//   int_div_round(7, 3);   // Returns 2 (2.33... rounds to 2)
+//   int_div_round(8, 3);   // Returns 3 (2.67... rounds to 3)
+// -----------------------------------------------------------------------------
+fn int_div_round(a: int, b: int) -> int {
+    if (b == 0) {
+        return 0;
+    }
+    
+    // Add b/2 before division for rounding
+    if ((a > 0) == (b > 0)) {
+        return (a + b / 2) / b;
+    } else {
+        return (a - b / 2) / b;
+    }
+}

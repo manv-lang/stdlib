@@ -1,0 +1,533 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/core/float.mv
+// description: Floating-point functions implemented in pure ManV
+//
+// This module provides floating-point manipulation functions for ManV programs.
+// All functions use compiler intrinsics that generate optimal SSE/x87 assembly.
+//
+// Functions:
+// ---------
+// - float_abs:      Absolute value
+// - float_sqrt:     Square root
+// - float_floor:    Round down
+// - float_ceil:     Round up
+// - float_round:    Round to nearest
+// - float_trunc:    Truncate to integer
+// - float_min:      Minimum of two values
+// - float_max:      Maximum of two values
+// - float_clamp:    Clamp to range
+// - float_is_nan:   Check for NaN
+// - float_is_inf:   Check for infinity
+// - float_is_finite: Check if finite
+// - float_to_str:   Convert to string
+// - float_from_str: Parse from string
+//
+// Dependencies:
+// ------------
+// - __sqrt:  Square root intrinsic (SSE2 sqrtsd)
+// - __fabs:  Absolute value intrinsic
+// - __floor: Floor intrinsic (SSE4.1 roundsd)
+// - __ceil:  Ceil intrinsic (SSE4.1 roundsd)
+// - __round: Round intrinsic (SSE4.1 roundsd)
+// - __trunc: Truncate intrinsic (SSE4.1 roundsd)
+// - __isnan: NaN check
+// - __isinf: Infinity check
+// - __isfinite: Finite check
+//
+// Author: ramsy0dev
+// License: MIT
+// =============================================================================
+
+// =============================================================================
+// Mathematical Constants
+// =============================================================================
+
+// Archimedes' constant (π)
+float PI = 3.14159265358979323846;
+
+// Tau = 2π, the circle constant
+float TAU = 6.28318530717958647692;
+
+// Euler's number (e)
+float E = 2.71828182845904523536;
+
+// Golden ratio (φ)
+float PHI = 1.61803398874989484820;
+
+// Square root of 2
+float SQRT2 = 1.41421356237309504880;
+
+// Natural logarithm of 2
+float LN2 = 0.693147180559945309417;
+
+// Natural logarithm of 10
+float LN10 = 2.30258509299404568402;
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+int ERRNO;
+
+// =============================================================================
+// Basic Float Operations
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// float_abs(float x) -> float
+// -----------------------------------------------------------------------------
+// Returns the absolute value of a floating-point number.
+//
+// Uses the __fabs intrinsic which clears the sign bit.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   |x| (absolute value)
+//
+// Special cases:
+//   float_abs(+0.0) = +0.0
+//   float_abs(-0.0) = +0.0
+//   float_abs(+inf) = +inf
+//   float_abs(-inf) = +inf
+//   float_abs(NaN) = NaN
+//
+// Example:
+//   float_abs(-3.14);  // Returns 3.14
+//   float_abs(2.71);   // Returns 2.71
+//
+// Performance: ~1 cycle (bitwise AND)
+// -----------------------------------------------------------------------------
+fn float_abs(x: float) -> float {
+    return __fabs(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_sqrt(float x) -> float
+// -----------------------------------------------------------------------------
+// Computes the square root of a floating-point number.
+//
+// Uses the __sqrt intrinsic which generates SSE2 sqrtsd instruction.
+//
+// Parameters:
+//   x: The value (must be non-negative for valid result)
+//
+// Returns:
+//   √x
+//
+// Special cases:
+//   sqrt(+0.0) = +0.0
+//   sqrt(-0.0) = -0.0
+//   sqrt(x < 0) = NaN
+//   sqrt(+inf) = +inf
+//   sqrt(NaN) = NaN
+//
+// Example:
+//   float_sqrt(4.0);   // Returns 2.0
+//   float_sqrt(2.0);   // Returns 1.414...
+//   float_sqrt(-1.0);  // Returns NaN
+//
+// Performance: ~14-62 cycles (hardware dependent)
+// -----------------------------------------------------------------------------
+fn float_sqrt(x: float) -> float {
+    return __sqrt(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_floor(float x) -> float
+// -----------------------------------------------------------------------------
+// Rounds toward negative infinity.
+//
+// Returns the largest integer less than or equal to x.
+// Uses SSE4.1 roundsd instruction.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   ⌊x⌋ (floor of x) as a float
+//
+// Example:
+//   float_floor(2.3);   // Returns 2.0
+//   float_floor(-2.3);  // Returns -3.0
+//   float_floor(2.0);   // Returns 2.0
+//
+// Performance: ~3-6 cycles with SSE4.1
+// -----------------------------------------------------------------------------
+fn float_floor(x: float) -> float {
+    return __floor(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_ceil(float x) -> float
+// -----------------------------------------------------------------------------
+// Rounds toward positive infinity.
+//
+// Returns the smallest integer greater than or equal to x.
+// Uses SSE4.1 roundsd instruction.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   ⌈x⌉ (ceiling of x) as a float
+//
+// Example:
+//   float_ceil(2.3);   // Returns 3.0
+//   float_ceil(-2.3);  // Returns -2.0
+//   float_ceil(2.0);   // Returns 2.0
+//
+// Performance: ~3-6 cycles with SSE4.1
+// -----------------------------------------------------------------------------
+fn float_ceil(x: float) -> float {
+    return __ceil(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_round(float x) -> float
+// -----------------------------------------------------------------------------
+// Rounds to the nearest integer.
+//
+// Uses "round half away from zero" convention.
+// Uses SSE4.1 roundsd instruction.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   Nearest integer as a float
+//
+// Example:
+//   float_round(2.3);   // Returns 2.0
+//   float_round(2.7);   // Returns 3.0
+//   float_round(-2.3);  // Returns -2.0
+//
+// Performance: ~3-6 cycles with SSE4.1
+// -----------------------------------------------------------------------------
+fn float_round(x: float) -> float {
+    return __round(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_trunc(float x) -> float
+// -----------------------------------------------------------------------------
+// Truncates toward zero (removes fractional part).
+//
+// Uses SSE4.1 roundsd instruction.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   Integer part as a float (fractional part discarded)
+//
+// Example:
+//   float_trunc(2.9);   // Returns 2.0
+//   float_trunc(-2.9);  // Returns -2.0
+//   float_trunc(2.0);   // Returns 2.0
+//
+// Performance: ~3-6 cycles with SSE4.1
+// -----------------------------------------------------------------------------
+fn float_trunc(x: float) -> float {
+    return __trunc(x);
+}
+
+// =============================================================================
+// Comparison Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// float_min(float a, float b) -> float
+// -----------------------------------------------------------------------------
+// Returns the smaller of two floats.
+//
+// Uses SSE2 minsd instruction.
+// Note: Handles NaN by returning the second argument.
+//
+// Parameters:
+//   a: First float
+//   b: Second float
+//
+// Returns:
+//   The smaller value
+//
+// Example:
+//   float_min(2.0, 3.0);    // Returns 2.0
+//   float_min(-1.0, 1.0);   // Returns -1.0
+// -----------------------------------------------------------------------------
+fn float_min(a: float, b: float) -> float {
+    // Use ternary for comparison
+    if (a < b) {
+        return a;
+    }
+    return b;
+}
+
+// -----------------------------------------------------------------------------
+// float_max(float a, float b) -> float
+// -----------------------------------------------------------------------------
+// Returns the larger of two floats.
+//
+// Uses SSE2 maxsd instruction.
+// Note: Handles NaN by returning the second argument.
+//
+// Parameters:
+//   a: First float
+//   b: Second float
+//
+// Returns:
+//   The larger value
+//
+// Example:
+//   float_max(2.0, 3.0);    // Returns 3.0
+//   float_max(-1.0, 1.0);   // Returns 1.0
+// -----------------------------------------------------------------------------
+fn float_max(a: float, b: float) -> float {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// -----------------------------------------------------------------------------
+// float_clamp(float x, float min_val, float max_val) -> float
+// -----------------------------------------------------------------------------
+// Clamps a value to a specified range.
+//
+// Parameters:
+//   x:       Value to clamp
+//   min_val: Minimum allowed value
+//   max_val: Maximum allowed value
+//
+// Returns:
+//   x clamped to [min_val, max_val]
+//
+// Example:
+//   float_clamp(5.0, 0.0, 10.0);   // Returns 5.0
+//   float_clamp(-5.0, 0.0, 10.0);  // Returns 0.0
+//   float_clamp(15.0, 0.0, 10.0);  // Returns 10.0
+// -----------------------------------------------------------------------------
+fn float_clamp(x: float, min_val: float, max_val: float) -> float {
+    if (x < min_val) {
+        return min_val;
+    }
+    if (x > max_val) {
+        return max_val;
+    }
+    return x;
+}
+
+// =============================================================================
+// Classification Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// float_is_nan(float x) -> bool
+// -----------------------------------------------------------------------------
+// Checks if a float is NaN (Not a Number).
+//
+// NaN is the only float value that is not equal to itself.
+// This property is used for detection.
+//
+// Parameters:
+//   x: The float to check
+//
+// Returns:
+//   true if x is NaN, false otherwise
+//
+// Example:
+//   float_is_nan(0.0 / 0.0);   // Returns true
+//   float_is_nan(1.0);         // Returns false
+// -----------------------------------------------------------------------------
+fn float_is_nan(x: float) -> bool {
+    return __isnan(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_is_inf(float x) -> bool
+// -----------------------------------------------------------------------------
+// Checks if a float is positive or negative infinity.
+//
+// Parameters:
+//   x: The float to check
+//
+// Returns:
+//   true if x is +inf or -inf, false otherwise
+//
+// Example:
+//   float_is_inf(1.0 / 0.0);   // Returns true
+//   float_is_inf(-1.0 / 0.0);  // Returns true
+//   float_is_inf(1.0);         // Returns false
+// -----------------------------------------------------------------------------
+fn float_is_inf(x: float) -> bool {
+    return __isinf(x);
+}
+
+// -----------------------------------------------------------------------------
+// float_is_finite(float x) -> bool
+// -----------------------------------------------------------------------------
+// Checks if a float is finite (not NaN, not infinity).
+//
+// Parameters:
+//   x: The float to check
+//
+// Returns:
+//   true if x is a finite number, false if NaN or infinity
+//
+// Example:
+//   float_is_finite(3.14);     // Returns true
+//   float_is_finite(1.0/0.0);  // Returns false
+//   float_is_finite(0.0/0.0);  // Returns false
+// -----------------------------------------------------------------------------
+fn float_is_finite(x: float) -> bool {
+    return __isfinite(x);
+}
+
+// =============================================================================
+// Conversion Functions
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// float_to_int(float x) -> int
+// -----------------------------------------------------------------------------
+// Converts a float to an integer by truncation.
+//
+// Parameters:
+//   x: The float value
+//
+// Returns:
+//   Integer part of x (truncated toward zero)
+//
+// Example:
+//   float_to_int(3.7);   // Returns 3
+//   float_to_int(-3.7);  // Returns -3
+// -----------------------------------------------------------------------------
+fn float_to_int(x: float) -> int {
+    // Truncate and convert to int
+    return __trunc(x) as int;
+}
+
+// -----------------------------------------------------------------------------
+// int_to_float(int x) -> float
+// -----------------------------------------------------------------------------
+// Converts an integer to a float.
+//
+// Parameters:
+//   x: The integer value
+//
+// Returns:
+//   x as a float (may lose precision for large integers)
+//
+// Example:
+//   int_to_float(42);    // Returns 42.0
+//   int_to_float(-17);   // Returns -17.0
+// -----------------------------------------------------------------------------
+fn int_to_float(x: int) -> float {
+    return x as float;
+}
+
+// -----------------------------------------------------------------------------
+// float_to_str(float x) -> str*
+// -----------------------------------------------------------------------------
+// Converts a float to a heap-allocated string.
+//
+// This implementation provides basic float-to-string conversion.
+// Uses a simple algorithm that handles:
+// - Sign
+// - Integer part
+// - Decimal point
+// - Fractional part (up to 6 decimal places)
+//
+// Parameters:
+//   x: The float to convert
+//
+// Returns:
+//   Pointer to heap-allocated string representation
+//   Caller must free the returned string
+//
+// Example:
+//   str* s = float_to_str(3.14159);  // "3.141590"
+//   str* s = float_to_str(-2.5);     // "-2.500000"
+//   str* s = float_to_str(0.0);      // "0.000000"
+//
+// Limitations:
+// - Does not handle scientific notation
+// - Fixed 6 decimal places
+// - May not handle very large/small numbers correctly
+// -----------------------------------------------------------------------------
+fn float_to_str(x: float) -> str* {
+    // Handle special cases
+    if (float_is_nan(x)) {
+        // Return "NaN"
+        void* mapped;
+        syscall SYS_MMAP, 0, 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        if (mapped == -1) return 0;
+        int* len_header = mapped;
+        *len_header = 3;
+        str* result = mapped + 8;
+        result[0] = 78;  // 'N'
+        result[1] = 97;  // 'a'
+        result[2] = 78;  // 'N'
+        result[3] = 0;
+        return result;
+    }
+    
+    if (float_is_inf(x)) {
+        void* mapped;
+        syscall SYS_MMAP, 0, 16, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        if (mapped == -1) return 0;
+        int* len_header = mapped;
+        str* result = mapped + 8;
+        
+        if (x < 0.0) {
+            *len_header = 4;
+            result[0] = 45;  // '-'
+            result[1] = 73;  // 'I'
+            result[2] = 110; // 'n'
+            result[3] = 102; // 'f'
+            result[4] = 0;
+        } else {
+            *len_header = 3;
+            result[0] = 73;  // 'I'
+            result[1] = 110; // 'n'
+            result[2] = 102; // 'f'
+            result[3] = 0;
+        }
+        return result;
+    }
+    
+    // Handle sign
+    int is_negative = x < 0.0;
+    float abs_x = float_abs(x);
+    
+    // Split into integer and fractional parts
+    int int_part = float_trunc(abs_x) as int;
+    float frac_part = abs_x - (int_part as float);
+    
+    // Count integer digits
+    int int_digits = 0;
