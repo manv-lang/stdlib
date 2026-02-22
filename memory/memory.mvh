@@ -1,0 +1,168 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// file: stdlib/memory/memory.mvh
+// description: Memory management header for ManV
+//
+// This header provides the interface for GC and arena memory management.
+// Include this file to use gc<T>, arena_ref<T>, and arena types.
+
+// ============================================
+// Type Annotations
+// ============================================
+
+// gc<T> - GC-managed reference
+// Objects of this type are managed by the garbage collector.
+// They are automatically freed when no longer reachable.
+//
+// Example:
+//   gc<int> x = gc_new(int, 42);
+//   gc<List<int>> data = gc_new(List<int>);
+
+// arena_ref<T> - Arena-scoped reference
+// Objects of this type live in an arena and are freed when
+// the arena is freed. Cannot escape the arena lifetime.
+//
+// Example:
+//   arena a = arena_new(4096);
+//   arena_ref<int> tmp = arena_alloc(a, int);
+//   arena_free(a);  // tmp becomes invalid
+
+// arena - Arena handle
+// Represents an arena allocator for scoped/bump allocation.
+//
+// Example:
+//   arena a = arena_new(4096);
+//   // use arena...
+//   arena_free(a);
+
+// ============================================
+// GC Functions
+// ============================================
+
+// Initialize the garbage collector
+// Call this once at program start (optional - auto-initialized)
+fn gc_init() -> void;
+
+// Allocate a GC-managed object
+// Arguments:
+//   size: payload size in bytes
+//   type_id: type identifier
+// Returns: pointer to payload
+fn gc_alloc(size: int, type_id: int) -> void*;
+
+// Trigger garbage collection manually
+// Returns: number of objects freed
+fn gc_collect() -> int;
+
+// Register a stack frame with GC roots
+// Arguments:
+//   frame: pointer to frame structure
+fn gc_register_frame(frame: void*) -> void;
+
+// Unregister a stack frame
+// Arguments:
+//   frame: pointer to frame structure
+fn gc_unregister_frame(frame: void*) -> void;
+
+// Get GC statistics
+// Arguments:
+//   stats: pointer to stats struct (5 * 8 bytes)
+fn gc_get_stats(stats: void*) -> void;
+
+// ============================================
+// Arena Functions
+// ============================================
+
+// Create a new arena
+// Arguments:
+//   capacity: initial capacity in bytes (0 for default)
+// Returns: arena handle
+fn arena_new(capacity: int) -> arena;
+
+// Allocate memory in an arena
+// Arguments:
+//   arena: arena handle
+//   size: size to allocate
+//   align: alignment (0 for default)
+// Returns: pointer to allocated memory
+fn arena_alloc(arena: arena, size: int, align: int) -> void*;
+
+// Free an entire arena
+// All arena_ref<T> pointing into this arena become invalid.
+// Arguments:
+//   arena: arena handle
+fn arena_free(arena: arena) -> void;
+
+// Reset arena (keep memory, clear offset)
+// Arguments:
+//   arena: arena handle
+fn arena_reset(arena: arena) -> void;
+
+// Get available space in arena
+// Arguments:
+//   arena: arena handle
+// Returns: available bytes
+fn arena_available(arena: arena) -> int;
+
+// Get arena statistics
+// Arguments:
+//   arena: arena handle
+//   stats: pointer to stats struct (4 * 8 bytes)
+fn arena_get_stats(arena: arena, stats: void*) -> void;
+
+// ============================================
+// Promotion
+// ============================================
+
+// Promote an arena_ref to a GC-managed object
+// Creates a deep copy in the GC heap.
+// Arguments:
+//   ref: arena_ref to promote
+//   size: size of the object
+// Returns: gc<T> pointer
+fn promote(ref: void*, size: int) -> void*;
+
+// ============================================
+// Type IDs (for runtime)
+// ============================================
+
+// Type IDs are stored as bytes<2> (2-byte values)
+// This allows direct memory operations without const overhead
+
+bytes<2> TYPE_ID_INT = 0x0001;
+bytes<2> TYPE_ID_FLOAT = 0x0002;
+bytes<2> TYPE_ID_STR = 0x0003;
+bytes<2> TYPE_ID_CHAR = 0x0004;
+bytes<2> TYPE_ID_ARRAY = 0x0010;
+bytes<2> TYPE_ID_POINTER = 0x0011;
+bytes<2> TYPE_ID_STRUCT = 0x0020;
+bytes<2> TYPE_ID_GC_WRAPPER = 0x0030;
+bytes<2> TYPE_ID_ARENA_REF = 0x0031;
+
+// ============================================
+// Configuration Constants
+// ============================================
+
+int GC_DEFAULT_THRESHOLD = 1048576;  // 1MB
+int ARENA_DEFAULT_CAPACITY = 4096;    // 4KB
+int ARENA_DEFAULT_ALIGNMENT = 16;
