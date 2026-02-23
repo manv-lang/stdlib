@@ -1,0 +1,630 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/time/time.mv
+// description: Time utilities module with OOP design
+//
+// This module provides time functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - Instant    - A point in time
+// - Duration   - A span of time
+// - DateTime   - Calendar date and time
+// - Timer      - Stopwatch timer
+// - Clock      - System clock
+//
+// Functions:
+// ----------
+// - now()            - Get current timestamp in nanoseconds
+// - unix()           - Get Unix timestamp (seconds since epoch)
+// - sleep(ms)        - Sleep for milliseconds
+// - instant_now()    - Create an Instant at current time
+//
+// Examples:
+// ---------
+// // Get current time
+// int ts = unix();
+//
+// // Measure elapsed time
+// Instant* start = Instant.now();
+// // ... do work ...
+// Duration* elapsed = start.elapsed();
+// print("Took {} ms", elapsed.as_millis());
+//
+// // Sleep for 1 second
+// sleep(1000);
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_CLOCK_GETTIME = 228;
+int SYS_NANOSLEEP = 35;
+int SYS_GETTIMEOFDAY = 96;
+
+// Clock types
+int CLOCK_REALTIME = 0;
+int CLOCK_MONOTONIC = 1;
+int CLOCK_MONOTONIC_RAW = 4;
+int CLOCK_BOOTTIME = 7;
+
+// Time constants
+int NANOS_PER_MICRO = 1000;
+int NANOS_PER_MILLI = 1000000;
+int NANOS_PER_SECOND = 1000000000;
+int MICROS_PER_MILLI = 1000;
+int MICROS_PER_SECOND = 1000000;
+int MILLIS_PER_SECOND = 1000;
+int SECONDS_PER_MINUTE = 60;
+int SECONDS_PER_HOUR = 3600;
+int SECONDS_PER_DAY = 86400;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Structs
+// =============================================================================
+
+// Timespec for syscalls
+struct Timespec {
+    tv_sec: int;   // Seconds
+    tv_nsec: int;  // Nanoseconds
+}
+
+// Timeval for gettimeofday
+struct Timeval {
+    tv_sec: int;   // Seconds
+    tv_usec: int;  // Microseconds
+}
+
+// Timezone (unused but required for gettimeofday)
+struct Timezone {
+    tz_minuteswest: int;
+    tz_dsttime: int;
+}
+
+// =============================================================================
+// Duration Type
+// =============================================================================
+
+struct Duration {
+    secs: int;    // Whole seconds
+    nanos: int;   // Additional nanoseconds (0-999,999,999)
+}
+
+impl Duration {
+    // Create zero duration
+    constructor() {
+        self.secs = 0;
+        self.nanos = 0;
+    }
+    
+    // Create from seconds
+    fn from_secs(secs: int) -> Duration* {
+        Duration* d = new Duration();
+        d.secs = secs;
+        d.nanos = 0;
+        return d;
+    }
+    
+    // Create from milliseconds
+    fn from_millis(millis: int) -> Duration* {
+        Duration* d = new Duration();
+        d.secs = millis / MILLIS_PER_SECOND;
+        d.nanos = (millis % MILLIS_PER_SECOND) * NANOS_PER_MILLI;
+        return d;
+    }
+    
+    // Create from microseconds
+    fn from_micros(micros: int) -> Duration* {
+        Duration* d = new Duration();
+        d.secs = micros / MICROS_PER_SECOND;
+        d.nanos = (micros % MICROS_PER_SECOND) * NANOS_PER_MICRO;
+        return d;
+    }
+    
+    // Create from nanoseconds
+    fn from_nanos(nanos: int) -> Duration* {
+        Duration* d = new Duration();
+        d.secs = nanos / NANOS_PER_SECOND;
+        d.nanos = nanos % NANOS_PER_SECOND;
+        return d;
+    }
+    
+    // Create from seconds and nanoseconds
+    fn new(secs: int, nanos: int) -> Duration* {
+        Duration* d = new Duration();
+        d.secs = secs + nanos / NANOS_PER_SECOND;
+        d.nanos = nanos % NANOS_PER_SECOND;
+        return d;
+    }
+    
+    // Total as nanoseconds
+    fn as_nanos(self) -> int {
+        return self.secs * NANOS_PER_SECOND + self.nanos;
+    }
+    
+    // Total as microseconds
+    fn as_micros(self) -> int {
+        return self.secs * MICROS_PER_SECOND + self.nanos / NANOS_PER_MICRO;
+    }
+    
+    // Total as milliseconds
+    fn as_millis(self) -> int {
+        return self.secs * MILLIS_PER_SECOND + self.nanos / NANOS_PER_MILLI;
+    }
+    
+    // Total as seconds
+    fn as_secs(self) -> int {
+        return self.secs;
+    }
+    
+    // Subsecond nanoseconds
+    fn subsec_nanos(self) -> int {
+        return self.nanos;
+    }
+    
+    // Add durations
+    fn add(self, other: Duration*) -> Duration* {
+        int total_nanos = self.nanos + other.nanos;
+        return Duration.new(self.secs + other.secs + total_nanos / NANOS_PER_SECOND, 
+                           total_nanos % NANOS_PER_SECOND);
+    }
+    
+    // Subtract durations
+    fn sub(self, other: Duration*) -> Duration* {
+        int total_nanos = self.nanos - other.nanos;
+        int total_secs = self.secs - other.secs;
+        
+        if (total_nanos < 0) {
+            total_nanos = total_nanos + NANOS_PER_SECOND;
+            total_secs = total_secs - 1;
+        }
+        
+        return Duration.new(total_secs, total_nanos);
+    }
+    
+    // Check if zero
+    fn is_zero(self) -> bool {
+        return self.secs == 0 && self.nanos == 0;
+    }
+    
+    // Compare durations
+    fn cmp(self, other: Duration*) -> int {
+        if (self.secs > other.secs) {
+            return 1;
+        }
+        if (self.secs < other.secs) {
+            return -1;
+        }
+        if (self.nanos > other.nanos) {
+            return 1;
+        }
+        if (self.nanos < other.nanos) {
+            return -1;
+        }
+        return 0;
+    }
+    
+    // Check if greater than
+    fn gt(self, other: Duration*) -> bool {
+        return self.cmp(other) > 0;
+    }
+    
+    // Check if less than
+    fn lt(self, other: Duration*) -> bool {
+        return self.cmp(other) < 0;
+    }
+    
+    // Check if equal
+    fn eq(self, other: Duration*) -> bool {
+        return self.cmp(other) == 0;
+    }
+}
+
+// =============================================================================
+// Instant Type
+// =============================================================================
+
+struct Instant {
+    secs: int;
+    nanos: int;
+}
+
+impl Instant {
+    // Create instant at current time (monotonic)
+    fn now() -> Instant* {
+        Timespec ts;
+        syscall SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, &ts, ERRNO;
+        
+        Instant* i = new Instant();
+        i.secs = ts.tv_sec;
+        i.nanos = ts.tv_nsec;
+        return i;
+    }
+    
+    // Create from raw values
+    fn new(secs: int, nanos: int) -> Instant* {
+        Instant* i = new Instant();
+        i.secs = secs;
+        i.nanos = nanos;
+        return i;
+    }
+    
+    // Time elapsed since this instant
+    fn elapsed(self) -> Duration* {
+        Instant* now = Instant.now();
+        Duration* d = now.duration_since(self);
+        emt now;
+        return d;
+    }
+    
+    // Duration between two instants
+    fn duration_since(self, earlier: Instant*) -> Duration* {
+        int total_nanos = self.nanos - earlier.nanos;
+        int total_secs = self.secs - earlier.secs;
+        
+        if (total_nanos < 0) {
+            total_nanos = total_nanos + NANOS_PER_SECOND;
+            total_secs = total_secs - 1;
+        }
+        
+        return Duration.new(total_secs, total_nanos);
+    }
+    
+    // Add duration to instant
+    fn add(self, duration: Duration*) -> Instant* {
+        int total_nanos = self.nanos + duration.nanos;
+        return Instant.new(self.secs + duration.secs + total_nanos / NANOS_PER_SECOND,
+                          total_nanos % NANOS_PER_SECOND);
+    }
+    
+    // Subtract duration from instant
+    fn sub(self, duration: Duration*) -> Instant* {
+        int total_nanos = self.nanos - duration.nanos;
+        int total_secs = self.secs - duration.secs;
+        
+        if (total_nanos < 0) {
+            total_nanos = total_nanos + NANOS_PER_SECOND;
+            total_secs = total_secs - 1;
+        }
+        
+        return Instant.new(total_secs, total_nanos);
+    }
+}
+
+// =============================================================================
+// DateTime Type
+// =============================================================================
+
+struct DateTime {
+    year: int;
+    month: int;      // 1-12
+    day: int;        // 1-31
+    hour: int;       // 0-23
+    minute: int;     // 0-59
+    second: int;     // 0-59
+    nanos: int;      // 0-999,999,999
+    weekday: int;    // 0-6 (Sunday = 0)
+    yearday: int;    // 0-365
+    is_dst: bool;    // Daylight saving time
+}
+
+impl DateTime {
+    // Get current UTC time
+    fn utc() -> DateTime* {
+        Timespec ts;
+        syscall SYS_CLOCK_GETTIME, CLOCK_REALTIME, &ts, ERRNO;
+        return DateTime.from_timestamp(ts.tv_sec, ts.tv_nsec);
+    }
+    
+    // Create from Unix timestamp
+    fn from_timestamp(timestamp: int, nanos: int) -> DateTime* {
+        DateTime* dt = new DateTime();
+        
+        // Start with Unix epoch: 1970-01-01
+        int days = timestamp / SECONDS_PER_DAY;
+        int secs_remaining = timestamp % SECONDS_PER_DAY;
+        
+        // Calculate time of day
+        dt.hour = secs_remaining / SECONDS_PER_HOUR;
+        int hour_secs = dt.hour * SECONDS_PER_HOUR;
+        dt.minute = (secs_remaining - hour_secs) / SECONDS_PER_MINUTE;
+        dt.second = secs_remaining - hour_secs - dt.minute * SECONDS_PER_MINUTE;
+        dt.nanos = nanos;
+        
+        // Calculate date (simplified algorithm)
+        int year = 1970;
+        while (true) {
+            int days_in_year = DateTime._is_leap_year(year) ? 366 : 365;
+            if (days < days_in_year) {
+                break;
+            }
+            days = days - days_in_year;
+            year = year + 1;
+        }
+        dt.year = year;
+        
+        // Days in each month
+        int month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if (DateTime._is_leap_year(year)) {
+            month_days[1] = 29;
+        }
+        
+        int month = 0;
+        while (month < 12 && days >= month_days[month]) {
+            days = days - month_days[month];
+            month = month + 1;
+        }
+        dt.month = month + 1;
+        dt.day = days + 1;
+        dt.yearday = DateTime._day_of_year(dt.year, dt.month, dt.day);
+        dt.weekday = DateTime._day_of_week(dt.year, dt.month, dt.day);
+        dt.is_dst = false;
+        
+        return dt;
+    }
+    
+    // Create from components
+    fn new(year: int, month: int, day: int, hour: int, minute: int, second: int) -> DateTime* {
+        DateTime* dt = new DateTime();
+        dt.year = year;
+        dt.month = month;
+        dt.day = day;
+        dt.hour = hour;
+        dt.minute = minute;
+        dt.second = second;
+        dt.nanos = 0;
+        dt.yearday = DateTime._day_of_year(year, month, day);
+        dt.weekday = DateTime._day_of_week(year, month, day);
+        dt.is_dst = false;
+        return dt;
+    }
+    
+    // Check leap year
+    fn _is_leap_year(year: int) -> bool {
+        return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    }
+    
+    // Get day of year (0-365)
+    fn _day_of_year(year: int, month: int, day: int) -> int {
+        int month_days = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+        int doy = month_days[month - 1] + day - 1;
+        if (month > 2 && DateTime._is_leap_year(year)) {
+            doy = doy + 1;
+        }
+        return doy;
+    }
+    
+    // Get day of week (0 = Sunday)
+    fn _day_of_week(year: int, month: int, day: int) -> int {
+        // Zeller's congruence (simplified)
+        if (month < 3) {
+            month = month + 12;
+            year = year - 1;
+        }
+        int k = year % 100;
+        int j = year / 100;
+        int h = (day + (13 * (month + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
+        return (h + 5) % 7;  // Adjust to Sunday = 0
+    }
+    
+    // Convert to Unix timestamp
+    fn timestamp(self) -> int {
+        // Days from 1970 to year start
+        int days = 0;
+        int year = 1970;
+        
+        while (year < self.year) {
+            days = days + (DateTime._is_leap_year(year) ? 366 : 365);
+            year = year + 1;
+        }
+        
+        // Add days in this year
+        days = days + DateTime._day_of_year(self.year, self.month, self.day);
+        
+        // Total seconds
+        return days * SECONDS_PER_DAY + self.hour * SECONDS_PER_HOUR + 
+               self.minute * SECONDS_PER_MINUTE + self.second;
+    }
+    
+    // Format as string (ISO 8601)
+    fn format_iso(self) -> str* {
+        // YYYY-MM-DD HH:MM:SS
+        // This would need string formatting - simplified for now
+        return "";
+    }
+    
+    // Get days in month
+    fn days_in_month(self) -> int {
+        int month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        if (self.month == 2 && DateTime._is_leap_year(self.year)) {
+            return 29;
+        }
+        return month_days[self.month - 1];
+    }
+}
+
+// =============================================================================
+// Timer Type
+// =============================================================================
+
+struct Timer {
+    start: Instant*;
+    elapsed: Duration*;
+    running: bool;
+}
+
+impl Timer {
+    constructor() {
+        self.start = 0;
+        self.elapsed = Duration.new();
+        self.running = false;
+    }
+    
+    fn new() -> Timer* {
+        Timer* t = new Timer();
+        t.start = 0;
+        t.elapsed = Duration.new();
+        t.running = false;
+        return t;
+    }
+    
+    // Start the timer
+    fn start(self) -> void {
+        if (!self.running) {
+            self.start = Instant.now();
+            self.running = true;
+        }
+    }
+    
+    // Stop the timer
+    fn stop(self) -> Duration* {
+        if (self.running) {
+            Duration* current = self.start.elapsed();
+            self.elapsed = self.elapsed.add(current);
+            self.running = false;
+        }
+        return self.elapsed;
+    }
+    
+    // Reset the timer
+    fn reset(self) -> void {
+        self.start = 0;
+        self.elapsed = Duration.new();
+        self.running = false;
+    }
+    
+    // Get elapsed time
+    fn get_elapsed(self) -> Duration* {
+        if (self.running) {
+            Duration* current = self.start.elapsed();
+            return self.elapsed.add(current);
+        }
+        return self.elapsed;
+    }
+    
+    // Check if running
+    fn is_running(self) -> bool {
+        return self.running;
+    }
+    
+    // Restart the timer
+    fn restart(self) -> void {
+        self.reset();
+        self.start();
+    }
+}
+
+// =============================================================================
+// Standalone Functions
+// =============================================================================
+
+// Get current Unix timestamp (seconds)
+fn unix() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_REALTIME, &ts, ERRNO;
+    return ts.tv_sec;
+}
+
+// Get current timestamp in nanoseconds (monotonic)
+fn now() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, &ts, ERRNO;
+    return ts.tv_sec * NANOS_PER_SECOND + ts.tv_nsec;
+}
+
+// Get current timestamp in milliseconds
+fn millis() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, &ts, ERRNO;
+    return ts.tv_sec * MILLIS_PER_SECOND + ts.tv_nsec / NANOS_PER_MILLI;
+}
+
+// Get current timestamp in microseconds
+fn micros() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, &ts, ERRNO;
+    return ts.tv_sec * MICROS_PER_SECOND + ts.tv_nsec / NANOS_PER_MICRO;
+}
+
+// Sleep for milliseconds
+fn sleep(ms: int) -> int {
+    Timespec req;
+    Timespec rem;
+    
+    req.tv_sec = ms / MILLIS_PER_SECOND;
+    req.tv_nsec = (ms % MILLIS_PER_SECOND) * NANOS_PER_MILLI;
+    
+    int ret;
+    syscall SYS_NANOSLEEP, &req, &rem, ret;
+    
+    // Return remaining time if interrupted
+    if (ret == -1) {
+        return rem.tv_sec * MILLIS_PER_SECOND + rem.tv_nsec / NANOS_PER_MILLI;
+    }
+    return 0;
+}
+
+// Sleep for nanoseconds
+fn sleep_nanos(nanos: int) -> int {
+    Timespec req;
+    Timespec rem;
+    
+    req.tv_sec = nanos / NANOS_PER_SECOND;
+    req.tv_nsec = nanos % NANOS_PER_SECOND;
+    
+    int ret;
+    syscall SYS_NANOSLEEP, &req, &rem, ret;
+    
+    if (ret == -1) {
+        return rem.tv_sec * NANOS_PER_SECOND + rem.tv_nsec;
+    }
+    return 0;
+}
+
+// Get high-resolution time (realtime)
+fn realtime_nanos() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_REALTIME, &ts, ERRNO;
+    return ts.tv_sec * NANOS_PER_SECOND + ts.tv_nsec;
+}
+
+// Get monotonic time
+fn monotonic_nanos() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, &ts, ERRNO;
+    return ts.tv_sec * NANOS_PER_SECOND + ts.tv_nsec;
+}
+
+// Get boot time (includes time during sleep)
+fn boottime_nanos() -> int {
+    Timespec ts;
+    syscall SYS_CLOCK_GETTIME, CLOCK_BOOTTIME, &ts, ERRNO;
+    return ts.tv_sec * NANOS_PER_SECOND + ts.tv_nsec;
+}

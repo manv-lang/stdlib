@@ -2,20 +2,27 @@
 """
 Build script for ManV standard library.
 
-Compiles all assembly files into object files and archives them
-into static libraries: libcore.a and libstd.a
+The stdlib is now implemented in pure ManV (.mv files) with no assembly.
+This script provides build orchestration and validation.
 
 Usage:
     python build.py [--clean] [--verbose]
 
-Output:
-    libcore.a - Core types (str, int, float, array, bytes, mem)
-    libstd.a  - Standard library (io, math, memory)
+Modules:
+    core/core.mv      - Core types (String, Int, Float, Array, Bytes)
+    io/io.mv          - I/O operations (Reader, Writer, Stdin, Stdout)
+    math/math.mv      - Math operations (Math, Vec2, Vec3)
+    memory/memory.mv  - Memory management (Arena, GC, Pool, Buffer)
+    exception/exception.mv - Exception handling (Exception, Result)
+    sys/sys.mv        - System operations (Sys, SysInfo)
+    os/os.mv          - OS utilities (OS, Process, DiskInfo)
+    file/file.mv      - File I/O (File, FileStat, Path, Dir)
+    socket/socket.mv  - Networking (Socket, SockAddrIn, PollFd)
+    threads/threads.mv - Threading (Thread, Mutex, CondVar, RwLock)
 """
 
 import os
 import sys
-import subprocess
 import argparse
 from pathlib import Path
 from typing import List, Tuple
@@ -28,24 +35,30 @@ except ImportError:
     HAS_RICH = False
 
 
-# Library structure
-# libcore.a: Core types and utilities
-CORE_SOURCES = [
-    "core/core.asm",
-    "core/str.asm",
-    "core/int.asm",
-    "core/float.asm",
-    "core/array.asm",
-    "core/bytes.asm",
-]
-
-# libstd.a: Standard library modules
-STD_SOURCES = [
-    "io/io.asm",
-    "math/math.asm",
-    "memory/gc.asm",
-    "memory/arena.asm",
-    "memory/mem.asm",
+# Module structure
+# All modules are now pure ManV (.mv files)
+MODULES = [
+    "core/core.mv",
+    "io/io.mv",
+    "math/math.mv",
+    "memory/memory.mv",
+    "exception/exception.mv",
+    "sys/sys.mv",
+    "os/os.mv",
+    "file/file.mv",
+    "socket/socket.mv",
+    "threads/threads.mv",
+    "collections/collections.mv",
+    "hash/hash.mv",
+    "encoding/encoding.mv",
+    "time/time.mv",
+    "crypto/crypto.mv",
+    "compression/compression.mv",
+    "json/json.mv",
+    "toml/toml.mv",
+    "dotenv/dotenv.mv",
+    "logger/logger.mv",
+    "test/test.mv",
 ]
 
 
@@ -65,202 +78,104 @@ def log_error(message: str) -> None:
         print(f"[ERROR]: {message}")
 
 
-def log_cmd(command: List[str]) -> None:
-    """Print command being executed."""
+def log_warn(message: str) -> None:
+    """Print warning message."""
     if HAS_RICH:
-        print(f"[bold cyan][CMD][reset]: {' '.join(command)}")
+        print(f"[bold yellow][WARN][reset]: {message}")
     else:
-        print(f"[CMD]: {' '.join(command)}")
+        print(f"[WARN]: {message}")
 
 
-def run_command(command: List[str], verbose: bool = False) -> Tuple[bool, str]:
+def validate_modules(stdlib_dir: Path) -> bool:
     """
-    Run a command and return success status and output.
+    Validate that all module files exist.
     
     Args:
-        command: Command and arguments to run
-        verbose: Whether to print command output
-    1
+        stdlib_dir: Path to stdlib directory
+    
     Returns:
-        Tuple of (success, output)
+        True if all modules exist
     """
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True
-        )
-        
-        if verbose and result.stdout:
-            print(result.stdout)
-        if result.stderr and result.returncode != 0:
-            print(result.stderr)
-        
-        return result.returncode == 0, result.stderr
-    except FileNotFoundError:
-        return False, f"Command not found: {command[0]}"
-    except Exception as e:
-        return False, str(e)
-
-
-def check_dependencies() -> bool:
-    """Check that required tools are available."""
-    log_info("Checking dependencies...")
+    log_info("Validating modules...")
     
-    dependencies = ["nasm", "ar"]
-    all_found = True
+    all_valid = True
     
-    for dep in dependencies:
-        result = subprocess.run(
-            ["which", dep],
-            capture_output=True
-        )
+    for module in MODULES:
+        module_path = stdlib_dir / module
         
-        if result.returncode != 0:
-            log_error(f"Required tool not found: {dep}")
-            all_found = False
+        if not module_path.exists():
+            log_error(f"Module not found: {module}")
+            all_valid = False
         else:
             if HAS_RICH:
-                print(f"  [green]✓[reset] {dep}")
+                print(f"  [green]✓[reset] {module}")
             else:
-                print(f"  ✓ {dep}")
+                print(f"  ✓ {module}")
     
-    return all_found
+    return all_valid
 
 
-def compile_asm(source: Path, output: Path, verbose: bool = False) -> bool:
+def check_old_files(stdlib_dir: Path) -> List[Path]:
     """
-    Compile an assembly file to an object file.
+    Check for old .mvh and .asm files that should be removed.
     
     Args:
-        source: Path to source .asm file
-        output: Path to output .o file
-        verbose: Whether to print verbose output
-    
-    Returns:
-        True if compilation succeeded
-    """
-    command = [
-        "nasm",
-        "-f", "elf64",
-        str(source),
-        "-o", str(output)
-    ]
-    
-    if verbose:
-        log_cmd(command)
-    
-    success, error = run_command(command, verbose)
-    
-    if not success:
-        log_error(f"Failed to compile {source}")
-        if error:
-            print(error)
-    
-    return success
-
-
-def create_archive(objects: List[Path], output: Path, verbose: bool = False) -> bool:
-    """
-    Create a static library archive from object files.
-    
-    Args:
-        objects: List of object file paths
-        output: Path to output .a file
-        verbose: Whether to print verbose output
-    
-    Returns:
-        True if archive creation succeeded
-    """
-    command = ["ar", "rcs", str(output)] + [str(obj) for obj in objects]
-    
-    if verbose:
-        log_cmd(command)
-    
-    success, error = run_command(command, verbose)
-    
-    if not success:
-        log_error(f"Failed to create archive {output}")
-        if error:
-            print(error)
-    
-    return success
-
-
-def build_library(
-    name: str,
-    sources: List[str],
-    stdlib_dir: Path,
-    build_dir: Path,
-    verbose: bool = False
-) -> bool:
-    """
-    Build a static library from assembly sources.
-    
-    Args:
-        name: Library name (without .a extension)
-        sources: List of source paths relative to stdlib_dir
         stdlib_dir: Path to stdlib directory
-        build_dir: Path to build output directory
-        verbose: Whether to print verbose output
     
     Returns:
-        True if build succeeded
+        List of old files found
     """
-    log_info(f"Building {name}...")
+    old_files = []
     
-    objects: List[Path] = []
+    # Look for .mvh files
+    for mvh_file in stdlib_dir.glob("**/*.mvh"):
+        old_files.append(mvh_file)
     
-    for source in sources:
-        source_path = stdlib_dir / source
-        
-        if not source_path.exists():
-            log_error(f"Source file not found: {source_path}")
-            return False
-        
-        # Output object file path
-        obj_name = source.replace("/", "_").replace(".asm", ".o")
-        obj_path = build_dir / obj_name
-        
-        # Compile
-        if verbose:
-            log_info(f"  Compiling {source}")
-        
-        if not compile_asm(source_path, obj_path, verbose):
-            return False
-        
-        objects.append(obj_path)
+    # Look for .asm files
+    for asm_file in stdlib_dir.glob("**/*.asm"):
+        old_files.append(asm_file)
     
-    # Create archive
-    archive_path = stdlib_dir / f"{name}.a"
-    
-    if verbose:
-        log_info(f"  Creating archive {name}.a")
-    
-    if not create_archive(objects, archive_path, verbose):
-        return False
-    
-    if HAS_RICH:
-        print(f"  [green]✓[reset] Created {archive_path}")
-    else:
-        print(f"  ✓ Created {archive_path}")
-    
-    return True
+    return old_files
 
 
-def clean_build(stdlib_dir: Path, build_dir: Path) -> None:
+def clean_build(stdlib_dir: Path) -> None:
     """Clean build artifacts."""
     log_info("Cleaning build artifacts...")
     
-    # Remove object files
-    for obj_file in build_dir.glob("*.o"):
-        obj_file.unlink()
-        if HAS_RICH:
-            print(f"  [yellow]Removed[reset] {obj_file}")
-        else:
-            print(f"  Removed {obj_file}")
+    # Check for and warn about old files
+    old_files = check_old_files(stdlib_dir)
     
-    # Remove archives
+    if old_files:
+        log_warn("Found old files that should be removed:")
+        for f in old_files:
+            if HAS_RICH:
+                print(f"  [yellow]-[reset] {f}")
+            else:
+                print(f"  - {f}")
+    else:
+        log_info("No old files found.")
+    
+    # Remove build directory
+    build_dir = stdlib_dir / "build"
+    if build_dir.exists():
+        for obj_file in build_dir.glob("*.o"):
+            obj_file.unlink()
+            if HAS_RICH:
+                print(f"  [yellow]Removed[reset] {obj_file}")
+            else:
+                print(f"  Removed {obj_file}")
+        
+        # Remove build directory if empty
+        try:
+            build_dir.rmdir()
+            if HAS_RICH:
+                print(f"  [yellow]Removed[reset] {build_dir}")
+            else:
+                print(f"  Removed {build_dir}")
+        except:
+            pass
+    
+    # Remove old .a files
     for archive in stdlib_dir.glob("*.a"):
         archive.unlink()
         if HAS_RICH:
@@ -269,10 +184,24 @@ def clean_build(stdlib_dir: Path, build_dir: Path) -> None:
             print(f"  Removed {archive}")
 
 
+def generate_module_info(stdlib_dir: Path) -> None:
+    """Generate module information file."""
+    info_path = stdlib_dir / "modules.txt"
+    
+    with open(info_path, "w") as f:
+        f.write("# ManV Standard Library Modules\n")
+        f.write("# Auto-generated by build.py\n\n")
+        
+        for module in MODULES:
+            f.write(f"{module}\n")
+    
+    log_info(f"Generated module info: {info_path}")
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Build ManV standard library"
+        description="Build ManV standard library (pure ManV, no assembly)"
     )
     parser.add_argument(
         "--clean",
@@ -290,6 +219,11 @@ def main() -> int:
         default=None,
         help="Path to stdlib directory (default: script directory)"
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Only validate modules, don't build"
+    )
     
     args = parser.parse_args()
     
@@ -299,42 +233,42 @@ def main() -> int:
     else:
         stdlib_dir = Path(__file__).parent.resolve()
     
-    build_dir = stdlib_dir / "build"
-    
-    # Check dependencies
-    if not check_dependencies():
-        return 1
-    
-    # Create build directory
-    build_dir.mkdir(exist_ok=True)
-    
     # Clean if requested
     if args.clean:
-        clean_build(stdlib_dir, build_dir)
+        clean_build(stdlib_dir)
     
-    log_info(f"Building in {stdlib_dir}")
+    log_info(f"Stdlib directory: {stdlib_dir}")
     
-    # Build libcore.a
-    if not build_library("libcore", CORE_SOURCES, stdlib_dir, build_dir, args.verbose):
+    # Validate modules
+    if not validate_modules(stdlib_dir):
         return 1
     
-    # Build libstd.a
-    if not build_library("libstd", STD_SOURCES, stdlib_dir, build_dir, args.verbose):
-        return 1
+    if args.check:
+        log_info("Validation complete!")
+        return 0
+    
+    # Check for old files
+    old_files = check_old_files(stdlib_dir)
+    if old_files:
+        log_warn("Found old files. Run with --clean to see details.")
+    
+    # Generate module info
+    generate_module_info(stdlib_dir)
     
     log_info("Build complete!")
+    log_info("Note: The stdlib is now pure ManV. Use the ManV compiler to compile .mv files.")
     
     # Print summary
     print()
-    print("Output files:")
-    for lib in ["libcore.a", "libstd.a"]:
-        lib_path = stdlib_dir / lib
-        if lib_path.exists():
-            size = lib_path.stat().st_size
+    print("Available modules:")
+    for module in MODULES:
+        module_path = stdlib_dir / module
+        if module_path.exists():
+            size = module_path.stat().st_size
             if HAS_RICH:
-                print(f"  [green]✓[reset] {lib_path} ({size:,} bytes)")
+                print(f"  [green]INFO[reset] {module} ({size:,} bytes)")
             else:
-                print(f"  ✓ {lib_path} ({size:,} bytes)")
+                print(f"  INFO {module} ({size:,} bytes)")
     
     return 0
 

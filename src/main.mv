@@ -1,0 +1,6 @@
+# stdlib
+# Created with manv init
+
+fun main(): void {
+    print("Hello, stdlib!");
+}

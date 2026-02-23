@@ -1,0 +1,747 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/memory/memory.mv
+// description: Memory management module with OOP design - Arena, GC, Memory
+//
+// This module provides memory management using impl blocks.
+// All functions are implemented in pure ManV using syscalls and intrinsics.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers for Linux x86-64
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+int SYS_BRK = 12;
+
+// Memory protection flags
+int PROT_NONE = 0;
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int PROT_EXEC = 4;
+
+// Memory mapping flags
+int MAP_SHARED = 1;
+int MAP_PRIVATE = 2;
+int MAP_FIXED = 16;
+int MAP_ANONYMOUS = 32;
+
+// GC configuration
+int GC_DEFAULT_THRESHOLD = 1048576;  // 1MB
+int GC_GROW_FACTOR = 2;
+int GC_MIN_THRESHOLD = 65536;  // 64KB
+
+// Arena configuration
+int ARENA_DEFAULT_CAPACITY = 4096;  // 4KB
+int ARENA_DEFAULT_ALIGNMENT = 16;
+
+// Type IDs for GC
+int TYPE_ID_INT = 1;
+int TYPE_ID_FLOAT = 2;
+int TYPE_ID_STR = 3;
+int TYPE_ID_ARRAY = 16;
+int TYPE_ID_STRUCT = 32;
+int TYPE_ID_GC_WRAPPER = 48;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Memory Type - Low-level memory operations
+// =============================================================================
+
+struct Memory {
+    // Static methods only
+}
+
+impl Memory {
+    // Allocate memory using mmap
+    fn alloc(size: int) -> void* {
+        int alloc_size = (size + 15) & ~15;  // Align to 16 bytes
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        return mapped;
+    }
+    
+    // Allocate zeroed memory
+    fn alloc_zeroed(size: int) -> void* {
+        void* ptr = Memory.alloc(size);
+        
+        if (ptr != 0) {
+            Memory.zero(ptr, size);
+        }
+        
+        return ptr;
+    }
+    
+    // Free memory using munmap
+    fn free(ptr: void*, size: int) -> void {
+        int alloc_size = (size + 15) & ~15;
+        syscall SYS_MUNMAP, ptr, alloc_size, ERRNO;
+    }
+    
+    // Copy memory
+    fn copy(dest: void*, src: void*, n: int) -> void* {
+        __memcpy(dest, src, n);
+        return dest;
+    }
+    
+    // Move memory (handles overlapping regions)
+    fn move(dest: void*, src: void*, n: int) -> void* {
+        if (dest < src || dest >= src + n) {
+            // Forward copy
+            __memcpy(dest, src, n);
+        } else {
+            // Backward copy for overlapping
+            int i = n;
+            while (i > 0) {
+                i = i - 1;
+                ((bytes*)dest)[i] = ((bytes*)src)[i];
+            }
+        }
+        return dest;
+    }
+    
+    // Set memory to value
+    fn set(dest: void*, value: int, n: int) -> void* {
+        __memset(dest, value, n);
+        return dest;
+    }
+    
+    // Zero memory
+    fn zero(dest: void*, n: int) -> void* {
+        __memset(dest, 0, n);
+        return dest;
+    }
+    
+    // Compare memory
+    fn compare(s1: void*, s2: void*, n: int) -> int {
+        return __memcmp(s1, s2, n);
+    }
+    
+    // Check if memory is zero
+    fn is_zero(ptr: void*, n: int) -> bool {
+        int i = 0;
+        while (i < n) {
+            if (((bytes*)ptr)[i] != 0) {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+    
+    // Align pointer up
+    fn align_up(ptr: void*, alignment: int) -> void* {
+        int addr = ptr;
+        int aligned = (addr + alignment - 1) & ~(alignment - 1);
+        return aligned;
+    }
+    
+    // Align pointer down
+    fn align_down(ptr: void*, alignment: int) -> void* {
+        int addr = ptr;
+        int aligned = addr & ~(alignment - 1);
+        return aligned;
+    }
+    
+    // Get page size (typically 4096)
+    fn page_size() -> int {
+        return 4096;
+    }
+    
+    // Allocate aligned memory
+    fn alloc_aligned(size: int, alignment: int) -> void* {
+        // Allocate extra space for alignment
+        int total_size = size + alignment;
+        void* raw = Memory.alloc(total_size);
+        
+        if (raw == 0) {
+            return 0;
+        }
+        
+        // Align the pointer
+        void* aligned = Memory.align_up(raw + 1, alignment);
+        
+        // Store the original pointer just before the aligned address
+        void** header = aligned - 8;
+        *header = raw;
+        
+        return aligned;
+    }
+    
+    // Free aligned memory
+    fn free_aligned(ptr: void*) -> void {
+        // Get the original pointer from header
+        void** header = ptr - 8;
+        void* raw = *header;
+        
+        // We don't know the exact size, but munmap with the original mapping
+        // This is a simplification - real implementation would need size tracking
+        syscall SYS_MUNMAP, raw, 0, ERRNO;
+    }
+}
+
+// =============================================================================
+// Arena Type - Bump allocator
+// =============================================================================
+
+struct Arena {
+    base: void*;
+    offset: int;
+    capacity: int;
+    growable: bool;
+}
+
+impl Arena {
+    // Create a new arena with default capacity
+    constructor() {
+        self.base = Memory.alloc(ARENA_DEFAULT_CAPACITY);
+        self.offset = 0;
+        self.capacity = ARENA_DEFAULT_CAPACITY;
+        self.growable = true;
+    }
+    
+    // Create arena with specific capacity
+    fn with_capacity(capacity: int) -> Arena* {
+        Arena* arena = new Arena();
+        arena.base = Memory.alloc(capacity);
+        arena.offset = 0;
+        arena.capacity = capacity;
+        arena.growable = false;
+        return arena;
+    }
+    
+    // Create growable arena
+    fn growable(initial_capacity: int) -> Arena* {
+        Arena* arena = new Arena();
+        arena.base = Memory.alloc(initial_capacity);
+        arena.offset = 0;
+        arena.capacity = initial_capacity;
+        arena.growable = true;
+        return arena;
+    }
+    
+    // Allocate from arena
+    fn alloc(self, size: int) -> void* {
+        // Align size to 16 bytes
+        int aligned_size = (size + 15) & ~15;
+        
+        // Check if we have space
+        if (self.offset + aligned_size > self.capacity) {
+            if (!self.growable) {
+                return 0;
+            }
+            
+            // Grow the arena
+            int new_capacity = self.capacity * 2;
+            if (new_capacity < self.offset + aligned_size) {
+                new_capacity = self.offset + aligned_size;
+            }
+            
+            void* new_base = Memory.alloc(new_capacity);
+            if (new_base == 0) {
+                return 0;
+            }
+            
+            Memory.copy(new_base, self.base, self.offset);
+            Memory.free(self.base, self.capacity);
+            
+            self.base = new_base;
+            self.capacity = new_capacity;
+        }
+        
+        void* result = self.base + self.offset;
+        self.offset = self.offset + aligned_size;
+        
+        return result;
+    }
+    
+    // Allocate aligned from arena
+    fn alloc_aligned(self, size: int, alignment: int) -> void* {
+        // Calculate current position
+        int current = self.base + self.offset;
+        int aligned = (current + alignment - 1) & ~(alignment - 1);
+        int padding = aligned - current;
+        
+        // Allocate with padding
+        void* result = self.alloc(size + padding);
+        
+        if (result == 0) {
+            return 0;
+        }
+        
+        return result + padding;
+    }
+    
+    // Reset arena (keep memory, reset offset)
+    fn reset(self) -> void {
+        self.offset = 0;
+    }
+    
+    // Get used bytes
+    fn used(self) -> int {
+        return self.offset;
+    }
+    
+    // Get available bytes
+    fn available(self) -> int {
+        return self.capacity - self.offset;
+    }
+    
+    // Get total capacity
+    fn capacity(self) -> int {
+        return self.capacity;
+    }
+    
+    // Check if empty
+    fn is_empty(self) -> bool {
+        return self.offset == 0;
+    }
+    
+    // Free arena
+    fn free(self) -> void {
+        if (self.base != 0) {
+            Memory.free(self.base, self.capacity);
+            self.base = 0;
+            self.offset = 0;
+            self.capacity = 0;
+        }
+    }
+    
+    // Create a save point
+    fn save_point(self) -> int {
+        return self.offset;
+    }
+    
+    // Restore to save point
+    fn restore(self, save_point: int) -> void {
+        if (save_point >= 0 && save_point <= self.offset) {
+            self.offset = save_point;
+        }
+    }
+}
+
+// =============================================================================
+// ArenaRef Type - Reference to arena-allocated object
+// =============================================================================
+
+struct ArenaRef<T> {
+    arena: Arena*;
+    ptr: T*;
+}
+
+impl ArenaRef<T> {
+    constructor(arena: Arena*, ptr: T*) {
+        self.arena = arena;
+        self.ptr = ptr;
+    }
+    
+    fn get(self) -> T* {
+        return self.ptr;
+    }
+    
+    fn is_valid(self) -> bool {
+        return self.arena != 0 && self.ptr != 0;
+    }
+}
+
+// =============================================================================
+// GC Type - Simple mark-sweep garbage collector
+// =============================================================================
+
+struct GCObject {
+    header: int;      // Type ID and flags
+    size: int;        // Payload size
+    next: GCObject*;  // Next object in list
+    marked: bool;     // Mark flag for collection
+    // Payload follows
+}
+
+struct GC {
+    objects: GCObject*;
+    count: int;
+    total_size: int;
+    threshold: int;
+    paused: bool;
+}
+
+impl GC {
+    // Initialize GC
+    constructor() {
+        self.objects = 0;
+        self.count = 0;
+        self.total_size = 0;
+        self.threshold = GC_DEFAULT_THRESHOLD;
+        self.paused = false;
+    }
+    
+    // Create new GC instance
+    fn new() -> GC* {
+        return new GC();
+    }
+    
+    // Allocate an object
+    fn alloc(self, size: int, type_id: int) -> void* {
+        // Check if collection needed
+        if (!self.paused && self.total_size > self.threshold) {
+            self.collect();
+        }
+        
+        // Allocate object header + payload
+        int obj_size = 24 + size;  // header(24) + payload
+        obj_size = (obj_size + 15) & ~15;
+        
+        void* memory = Memory.alloc(obj_size);
+        if (memory == 0) {
+            return 0;
+        }
+        
+        // Initialize header
+        GCObject* obj = memory;
+        obj.header = type_id;
+        obj.size = size;
+        obj.marked = false;
+        
+        // Add to object list
+        obj.next = self.objects;
+        self.objects = obj;
+        
+        self.count = self.count + 1;
+        self.total_size = self.total_size + obj_size;
+        
+        // Return pointer to payload
+        return obj + 24;
+    }
+    
+    // Mark an object
+    fn mark(self, ptr: void*) -> void {
+        if (ptr == 0) {
+            return;
+        }
+        
+        // Get object header
+        GCObject* obj = ptr - 24;
+        obj.marked = true;
+    }
+    
+    // Sweep unmarked objects
+    fn sweep(self) -> int {
+        int freed = 0;
+        GCObject** current = &self.objects;
+        
+        while (*current != 0) {
+            GCObject* obj = *current;
+            
+            if (!obj.marked) {
+                // Remove from list
+                *current = obj.next;
+                
+                int obj_size = 24 + obj.size;
+                obj_size = (obj_size + 15) & ~15;
+                
+                self.total_size = self.total_size - obj_size;
+                self.count = self.count - 1;
+                freed = freed + 1;
+                
+                Memory.free(obj, obj_size);
+            } else {
+                // Clear mark for next collection
+                obj.marked = false;
+                current = &obj.next;
+            }
+        }
+        
+        return freed;
+    }
+    
+    // Run garbage collection
+    fn collect(self) -> int {
+        // Mark phase would be done by the runtime
+        // Here we just sweep
+        int freed = self.sweep();
+        
+        // Adjust threshold
+        if (self.total_size < self.threshold / GC_GROW_FACTOR) {
+            self.threshold = self.threshold / GC_GROW_FACTOR;
+            if (self.threshold < GC_MIN_THRESHOLD) {
+                self.threshold = GC_MIN_THRESHOLD;
+            }
+        } else if (self.total_size > self.threshold) {
+            self.threshold = self.total_size * GC_GROW_FACTOR;
+        }
+        
+        return freed;
+    }
+    
+    // Pause GC
+    fn pause(self) -> void {
+        self.paused = true;
+    }
+    
+    // Resume GC
+    fn resume(self) -> void {
+        self.paused = false;
+    }
+    
+    // Get statistics
+    fn get_count(self) -> int {
+        return self.count;
+    }
+    
+    fn get_size(self) -> int {
+        return self.total_size;
+    }
+    
+    fn get_threshold(self) -> int {
+        return self.threshold;
+    }
+    
+    // Set threshold
+    fn set_threshold(self, threshold: int) -> void {
+        self.threshold = threshold;
+    }
+}
+
+// =============================================================================
+// GCRef Type - GC-managed reference
+// =============================================================================
+
+struct GCRef<T> {
+    gc: GC*;
+    ptr: T*;
+}
+
+impl GCRef<T> {
+    constructor(gc: GC*, ptr: T*) {
+        self.gc = gc;
+        self.ptr = ptr;
+    }
+    
+    fn get(self) -> T* {
+        return self.ptr;
+    }
+    
+    fn is_valid(self) -> bool {
+        return self.gc != 0 && self.ptr != 0;
+    }
+    
+    fn mark(self) -> void {
+        if (self.gc != 0 && self.ptr != 0) {
+            self.gc.mark(self.ptr);
+        }
+    }
+}
+
+// =============================================================================
+// Pool Type - Object pool for fixed-size objects
+// =============================================================================
+
+struct Pool {
+    object_size: int;
+    capacity: int;
+    count: int;
+    free_list: void*;
+    memory: void*;
+}
+
+impl Pool {
+    constructor(object_size: int, capacity: int) {
+        self.object_size = object_size;
+        self.capacity = capacity;
+        self.count = 0;
+        
+        // Allocate memory for all objects
+        int total_size = object_size * capacity;
+        self.memory = Memory.alloc(total_size);
+        
+        // Build free list
+        self.free_list = 0;
+        int i = 0;
+        while (i < capacity) {
+            void* obj = self.memory + i * object_size;
+            
+            // Link to free list
+            void** link = obj;
+            *link = self.free_list;
+            self.free_list = obj;
+            
+            i = i + 1;
+        }
+    }
+    
+    // Allocate from pool
+    fn alloc(self) -> void* {
+        if (self.free_list == 0) {
+            return 0;  // Pool exhausted
+        }
+        
+        void* obj = self.free_list;
+        void** link = obj;
+        self.free_list = *link;
+        self.count = self.count + 1;
+        
+        return obj;
+    }
+    
+    // Return to pool
+    fn free(self, obj: void*) -> void {
+        void** link = obj;
+        *link = self.free_list;
+        self.free_list = obj;
+        self.count = self.count - 1;
+    }
+    
+    // Get available count
+    fn available(self) -> int {
+        return self.capacity - self.count;
+    }
+    
+    // Get used count
+    fn used(self) -> int {
+        return self.count;
+    }
+    
+    // Check if full
+    fn is_full(self) -> bool {
+        return self.free_list == 0;
+    }
+    
+    // Check if empty
+    fn is_empty(self) -> bool {
+        return self.count == 0;
+    }
+}
+
+// =============================================================================
+// Buffer Type - Dynamic buffer
+// =============================================================================
+
+struct Buffer {
+    data: void*;
+    length: int;
+    capacity: int;
+}
+
+impl Buffer {
+    constructor() {
+        self.data = 0;
+        self.length = 0;
+        self.capacity = 0;
+    }
+    
+    fn with_capacity(capacity: int) -> Buffer* {
+        Buffer* buf = new Buffer();
+        buf.data = Memory.alloc(capacity);
+        buf.capacity = capacity;
+        buf.length = 0;
+        return buf;
+    }
+    
+    fn len(self) -> int {
+        return self.length;
+    }
+    
+    fn capacity(self) -> int {
+        return self.capacity;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.length == 0;
+    }
+    
+    fn push(self, byte: int) -> void {
+        if (self.length >= self.capacity) {
+            self._grow(self.capacity == 0 ? 16 : self.capacity * 2);
+        }
+        
+        ((bytes*)self.data)[self.length] = byte;
+        self.length = self.length + 1;
+    }
+    
+    fn pop(self) -> int {
+        if (self.length == 0) {
+            return -1;
+        }
+        
+        self.length = self.length - 1;
+        return ((bytes*)self.data)[self.length];
+    }
+    
+    fn get(self, index: int) -> int {
+        if (index < 0 || index >= self.length) {
+            return -1;
+        }
+        return ((bytes*)self.data)[index];
+    }
+    
+    fn set(self, index: int, value: int) -> void {
+        if (index >= 0 && index < self.length) {
+            ((bytes*)self.data)[index] = value;
+        }
+    }
+    
+    fn clear(self) -> void {
+        self.length = 0;
+    }
+    
+    fn append(self, data: void*, len: int) -> void {
+        // Ensure capacity
+        while (self.length + len > self.capacity) {
+            self._grow(self.capacity * 2);
+        }
+        
+        Memory.copy(self.data + self.length, data, len);
+        self.length = self.length + len;
+    }
+    
+    fn _grow(self, new_capacity: int) -> void {
+        void* new_data = Memory.alloc(new_capacity);
+        
+        if (self.data != 0) {
+            Memory.copy(new_data, self.data, self.length);
+            Memory.free(self.data, self.capacity);
+        }
+        
+        self.data = new_data;
+        self.capacity = new_capacity;
+    }
+    
+    fn free(self) -> void {
+        if (self.data != 0) {
+            Memory.free(self.data, self.capacity);
+            self.data = 0;
+            self.length = 0;
+            self.capacity = 0;
+        }
+    }
+}

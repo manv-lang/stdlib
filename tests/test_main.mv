@@ -1,0 +1,7 @@
+# Tests for stdlib
+# Use manv test to run
+
+fun test_example(): void {
+    # Add your tests here
+    print("Running test_example...");
+}

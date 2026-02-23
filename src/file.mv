@@ -1,0 +1,740 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/file/file.mv
+// description: File I/O module with OOP design
+//
+// This module provides file operations using impl blocks.
+// All functions are implemented in pure ManV using syscalls.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_READ = 0;
+int SYS_WRITE = 1;
+int SYS_OPEN = 2;
+int SYS_CLOSE = 3;
+int SYS_STAT = 4;
+int SYS_FSTAT = 5;
+int SYS_LSTAT = 6;
+int SYS_LSEEK = 8;
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+int SYS_UNLINK = 87;
+int SYS_RENAME = 82;
+int SYS_CHMOD = 90;
+int SYS_MKDIR = 83;
+int SYS_RMDIR = 84;
+int SYS_READLINK = 89;
+int SYS_SYMLINK = 88;
+
+// Open flags
+int O_RDONLY = 0;
+int O_WRONLY = 1;
+int O_RDWR = 2;
+int O_CREAT = 64;
+int O_TRUNC = 512;
+int O_APPEND = 1024;
+
+// Seek origins
+int SEEK_SET = 0;
+int SEEK_CUR = 1;
+int SEEK_END = 2;
+
+// File permissions
+int S_IRUSR = 256;   // Owner read
+int S_IWUSR = 128;   // Owner write
+int S_IXUSR = 64;    // Owner execute
+int S_IRGRP = 32;    // Group read
+int S_IWGRP = 16;    // Group write
+int S_IXGRP = 8;     // Group execute
+int S_IROTH = 4;     // Other read
+int S_IWOTH = 2;     // Other write
+int S_IXOTH = 1;     // Other execute
+int S_IRWXU = 448;   // Owner all
+int S_IRWXG = 56;    // Group all
+int S_IRWXO = 7;     // Other all
+int S_0755 = 493;    // rwxr-xr-x
+int S_0644 = 420;    // rw-r--r--
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// File Type
+// =============================================================================
+
+struct File {
+    fd: int;
+    path: str*;
+    mode: str*;
+    is_open: bool;
+    position: int;
+    size: int;
+    error: int;
+}
+
+impl File {
+    constructor() {
+        self.fd = -1;
+        self.path = "";
+        self.mode = "";
+        self.is_open = false;
+        self.position = 0;
+        self.size = 0;
+        self.error = 0;
+    }
+    
+    // Open file
+    fn open(path: str*, mode: str*) -> File* {
+        File* f = new File();
+        
+        int flags = 0;
+        int create_mode = 0;
+        
+        // Parse mode string
+        // "r" = O_RDONLY
+        // "w" = O_WRONLY | O_CREAT | O_TRUNC
+        // "a" = O_WRONLY | O_CREAT | O_APPEND
+        // "r+" = O_RDWR
+        // "w+" = O_RDWR | O_CREAT | O_TRUNC
+        
+        int mode_len = 0;
+        int* len_ptr = (mode - 8);
+        mode_len = *len_ptr;
+        
+        if (mode_len > 0) {
+            int c = mode[0];
+            if (c == 114) {  // 'r'
+                flags = O_RDONLY;
+            } else if (c == 119) {  // 'w'
+                flags = O_WRONLY | O_CREAT | O_TRUNC;
+                create_mode = S_0644;
+            } else if (c == 97) {  // 'a'
+                flags = O_WRONLY | O_CREAT | O_APPEND;
+                create_mode = S_0644;
+            }
+        }
+        
+        int fd;
+        syscall SYS_OPEN, path, flags, create_mode, fd, ERRNO;
+        
+        if (fd < 0) {
+            f.error = ERRNO;
+            return f;
+        }
+        
+        f.fd = fd;
+        f.path = path;
+        f.mode = mode;
+        f.is_open = true;
+        
+        // Get file size
+        bytes stat_buf[144];  // struct stat
+        syscall SYS_FSTAT, fd, stat_buf, ERRNO;
+        
+        int* size_ptr = stat_buf + 48;  // st_size offset
+        f.size = *size_ptr;
+        
+        return f;
+    }
+    
+    // Close file
+    fn close(self) -> void {
+        if (self.is_open && self.fd >= 0) {
+            syscall SYS_CLOSE, self.fd, ERRNO;
+            self.fd = -1;
+            self.is_open = false;
+        }
+    }
+    
+    // Check if open
+    fn is_open(self) -> bool {
+        return self.is_open;
+    }
+    
+    // Get last error
+    fn error(self) -> int {
+        return self.error;
+    }
+    
+    // Read bytes
+    fn read(self, buffer: void*, size: int) -> int {
+        if (!self.is_open) {
+            return -1;
+        }
+        
+        int bytes_read;
+        syscall SYS_READ, self.fd, buffer, size, bytes_read, ERRNO;
+        
+        if (bytes_read > 0) {
+            self.position = self.position + bytes_read;
+        }
+        
+        return bytes_read;
+    }
+    
+    // Read all content
+    fn read_all(self) -> str* {
+        if (!self.is_open) {
+            return "";
+        }
+        
+        // Seek to beginning
+        self.seek(0, SEEK_SET);
+        
+        // Allocate buffer
+        int alloc_size = 8 + self.size + 1;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return "";
+        }
+        
+        // Set length header
+        int* len_header = mapped;
+        *len_header = self.size;
+        
+        str* buffer = mapped + 8;
+        
+        // Read file content
+        int total = 0;
+        while (total < self.size) {
+            int bytes_read = self.read(buffer + total, self.size - total);
+            if (bytes_read <= 0) {
+                break;
+            }
+            total = total + bytes_read;
+        }
+        
+        buffer[total] = 0;
+        
+        return buffer;
+    }
+    
+    // Read a single byte
+    fn read_byte(self) -> int {
+        bytes buffer[1];
+        int n = self.read(buffer, 1);
+        
+        if (n <= 0) {
+            return -1;
+        }
+        
+        return buffer[0];
+    }
+    
+    // Read line
+    fn read_line(self, buffer: str*, max_len: int) -> int {
+        int pos = 0;
+        
+        while (pos < max_len - 1) {
+            int b = self.read_byte();
+            
+            if (b < 0) {
+                break;
+            }
+            
+            buffer[pos] = b;
+            pos = pos + 1;
+            
+            if (b == 10) {  // newline
+                break;
+            }
+        }
+        
+        buffer[pos] = 0;
+        
+        // Update length header
+        int* len_ptr = (buffer - 8);
+        *len_ptr = pos;
+        
+        return pos;
+    }
+    
+    // Write bytes
+    fn write(self, buffer: void*, size: int) -> int {
+        if (!self.is_open) {
+            return -1;
+        }
+        
+        int bytes_written;
+        syscall SYS_WRITE, self.fd, buffer, size, bytes_written, ERRNO;
+        
+        if (bytes_written > 0) {
+            self.position = self.position + bytes_written;
+        }
+        
+        return bytes_written;
+    }
+    
+    // Write string
+    fn write_str(self, content: str*) -> int {
+        int* len_ptr = (content - 8);
+        int len = *len_ptr;
+        return self.write(content, len);
+    }
+    
+    // Write a single byte
+    fn write_byte(self, byte: int) -> int {
+        bytes buffer[1];
+        buffer[0] = byte;
+        return self.write(buffer, 1);
+    }
+    
+    // Flush (sync)
+    fn flush(self) -> void {
+        // FSYNC = 74
+        syscall 74, self.fd, ERRNO;
+    }
+    
+    // Seek
+    fn seek(self, offset: int, origin: int) -> int {
+        if (!self.is_open) {
+            return -1;
+        }
+        
+        int new_pos;
+        syscall SYS_LSEEK, self.fd, offset, origin, new_pos, ERRNO;
+        
+        self.position = new_pos;
+        return new_pos;
+    }
+    
+    // Get current position
+    fn tell(self) -> int {
+        return self.position;
+    }
+    
+    // Check for EOF
+    fn eof(self) -> bool {
+        return self.position >= self.size;
+    }
+    
+    // Get file size
+    fn size(self) -> int {
+        return self.size;
+    }
+    
+    // Truncate file
+    fn truncate(self, length: int) -> int {
+        // FTRUNCATE = 77
+        int result;
+        syscall 77, self.fd, length, result, ERRNO;
+        return result;
+    }
+}
+
+// =============================================================================
+// FileStat Type
+// =============================================================================
+
+struct FileStat {
+    size: int;
+    mode: int;
+    uid: int;
+    gid: int;
+    atime: int;
+    mtime: int;
+    is_dir: bool;
+    is_file: bool;
+}
+
+impl FileStat {
+    constructor() {
+        self.size = 0;
+        self.mode = 0;
+        self.uid = 0;
+        self.gid = 0;
+        self.atime = 0;
+        self.mtime = 0;
+        self.is_dir = false;
+        self.is_file = true;
+    }
+    
+    // Stat a file by path
+    fn stat(path: str*) -> FileStat* {
+        FileStat* s = new FileStat();
+        
+        bytes stat_buf[144];
+        syscall SYS_STAT, path, stat_buf, ERRNO;
+        
+        // Extract fields from stat struct
+        int* mode_ptr = stat_buf + 24;
+        int* size_ptr = stat_buf + 48;
+        int* uid_ptr = stat_buf + 28;
+        int* gid_ptr = stat_buf + 32;
+        int* atime_ptr = stat_buf + 72;
+        int* mtime_ptr = stat_buf + 88;
+        
+        s.mode = *mode_ptr;
+        s.size = *size_ptr;
+        s.uid = *uid_ptr;
+        s.gid = *gid_ptr;
+        s.atime = *atime_ptr;
+        s.mtime = *mtime_ptr;
+        
+        // Check if directory
+        s.is_dir = (s.mode & 0x4000) != 0;
+        s.is_file = !s.is_dir;
+        
+        return s;
+    }
+    
+    // Check if file exists
+    fn exists(path: str*) -> bool {
+        bytes stat_buf[144];
+        int result;
+        syscall SYS_STAT, path, stat_buf, result, ERRNO;
+        return result == 0;
+    }
+    
+    // Check if path is directory
+    fn is_dir(path: str*) -> bool {
+        FileStat* s = FileStat.stat(path);
+        return s.is_dir;
+    }
+    
+    // Check if path is file
+    fn is_file(path: str*) -> bool {
+        FileStat* s = FileStat.stat(path);
+        return s.is_file;
+    }
+    
+    // Get file size
+    fn size_path(path: str*) -> int {
+        FileStat* s = FileStat.stat(path);
+        return s.size;
+    }
+}
+
+// =============================================================================
+// Path Type
+// =============================================================================
+
+struct Path {
+    // Static methods
+}
+
+impl Path {
+    // Join path components
+    fn join(base: str*, component: str*) -> str* {
+        // Get lengths
+        int* base_len_ptr = (base - 8);
+        int base_len = *base_len_ptr;
+        int* comp_len_ptr = (component - 8);
+        int comp_len = *comp_len_ptr;
+        
+        // Allocate result
+        int total_len = base_len + 1 + comp_len;
+        int alloc_size = 8 + total_len + 1;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return "";
+        }
+        
+        int* len_header = mapped;
+        *len_header = total_len;
+        
+        str* result = mapped + 8;
+        
+        // Copy base
+        __memcpy(result, base, base_len);
+        
+        // Add separator
+        result[base_len] = 47;  // '/'
+        
+        // Copy component
+        __memcpy(result + base_len + 1, component, comp_len);
+        
+        result[total_len] = 0;
+        
+        return result;
+    }
+    
+    // Get directory name
+    fn dirname(path: str*) -> str* {
+        int* len_ptr = (path - 8);
+        int len = *len_ptr;
+        
+        // Find last separator
+        int pos = len - 1;
+        while (pos >= 0) {
+            if (path[pos] == 47) {  // '/'
+                break;
+            }
+            pos = pos - 1;
+        }
+        
+        if (pos <= 0) {
+            return "/";
+        }
+        
+        // Return substring
+        str* result = path;
+        int* result_len = (result - 8);
+        *result_len = pos;
+        
+        return result;
+    }
+    
+    // Get base name
+    fn basename(path: str*) -> str* {
+        int* len_ptr = (path - 8);
+        int len = *len_ptr;
+        
+        // Find last separator
+        int pos = len - 1;
+        while (pos >= 0) {
+            if (path[pos] == 47) {  // '/'
+                pos = pos + 1;
+                break;
+            }
+            pos = pos - 1;
+        }
+        
+        if (pos < 0) {
+            pos = 0;
+        }
+        
+        return path + pos;
+    }
+    
+    // Get file extension
+    fn extension(path: str*) -> str* {
+        int* len_ptr = (path - 8);
+        int len = *len_ptr;
+        
+        // Find last dot
+        int pos = len - 1;
+        while (pos >= 0) {
+            if (path[pos] == 46) {  // '.'
+                pos = pos + 1;
+                break;
+            }
+            pos = pos - 1;
+        }
+        
+        if (pos <= 0) {
+            return "";
+        }
+        
+        return path + pos;
+    }
+    
+    // Check if path is absolute
+    fn is_absolute(path: str*) -> bool {
+        int* len_ptr = (path - 8);
+        int len = *len_ptr;
+        
+        if (len > 0 && path[0] == 47) {  // '/'
+            return true;
+        }
+        
+        return false;
+    }
+}
+
+// =============================================================================
+// Dir Type
+// =============================================================================
+
+struct Dir {
+    fd: int;
+    path: str*;
+    buffer: void*;
+    buffer_size: int;
+    position: int;
+}
+
+impl Dir {
+    constructor() {
+        self.fd = -1;
+        self.path = "";
+        self.buffer = 0;
+        self.buffer_size = 4096;
+        self.position = 0;
+    }
+    
+    // Open directory
+    fn open(path: str*) -> Dir* {
+        Dir* d = new Dir();
+        
+        // Open directory
+        int fd;
+        syscall SYS_OPEN, path, O_RDONLY, 0, fd, ERRNO;
+        
+        if (fd < 0) {
+            return d;
+        }
+        
+        d.fd = fd;
+        d.path = path;
+        
+        // Allocate buffer for getdents
+        d.buffer = 0;  // Would allocate
+        
+        return d;
+    }
+    
+    // Close directory
+    fn close(self) -> void {
+        if (self.fd >= 0) {
+            syscall SYS_CLOSE, self.fd, ERRNO;
+            self.fd = -1;
+        }
+    }
+    
+    // Read next entry
+    fn read_entry(self) -> str* {
+        // Would use getdents syscall
+        return "";
+    }
+    
+    // List all entries
+    fn list(path: str*) -> void* {
+        // Would return array of strings
+        return 0;
+    }
+}
+
+// =============================================================================
+// Convenience Functions
+// =============================================================================
+
+// Read entire file
+fn file_read_all(path: str*) -> str* {
+    File* f = File.open(path, "r");
+    if (!f.is_open) {
+        return "";
+    }
+    
+    str* content = f.read_all();
+    f.close();
+    
+    return content;
+}
+
+// Write entire file
+fn file_write_all(path: str*, content: str*) -> int {
+    File* f = File.open(path, "w");
+    if (!f.is_open) {
+        return -1;
+    }
+    
+    int result = f.write_str(content);
+    f.close();
+    
+    return result;
+}
+
+// Copy file
+fn file_copy(src: str*, dest: str*) -> int {
+    File* src_file = File.open(src, "r");
+    if (!src_file.is_open) {
+        return -1;
+    }
+    
+    File* dest_file = File.open(dest, "w");
+    if (!dest_file.is_open) {
+        src_file.close();
+        return -1;
+    }
+    
+    // Copy in chunks
+    bytes buffer[4096];
+    int total = 0;
+    
+    while (true) {
+        int n = src_file.read(buffer, 4096);
+        if (n <= 0) {
+            break;
+        }
+        
+        dest_file.write(buffer, n);
+        total = total + n;
+    }
+    
+    src_file.close();
+    dest_file.close();
+    
+    return total;
+}
+
+// Delete file
+fn file_remove(path: str*) -> int {
+    int result;
+    syscall SYS_UNLINK, path, result, ERRNO;
+    return result;
+}
+
+// Rename file
+fn file_move(src: str*, dest: str*) -> int {
+    int result;
+    syscall SYS_RENAME, src, dest, result, ERRNO;
+    return result;
+}
+
+// Create directory
+fn dir_create(path: str*) -> int {
+    int result;
+    syscall SYS_MKDIR, path, S_0755, result, ERRNO;
+    return result;
+}
+
+// Remove directory
+fn dir_remove(path: str*) -> int {
+    int result;
+    syscall SYS_RMDIR, path, result, ERRNO;
+    return result;
+}
+
+// Get current working directory
+fn dir_current() -> str* {
+    bytes buffer[256];
+    syscall SYS_GETCWD, buffer, 256, ERRNO;
+    return buffer;
+}
+
+// Change directory
+fn dir_change(path: str*) -> int {
+    int result;
+    syscall 80, path, result, ERRNO;  // SYS_CHDIR
+    return result;
+}

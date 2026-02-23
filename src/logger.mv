@@ -1,0 +1,438 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/logger/logger.mv
+// description: Logging utilities module with OOP design
+//
+// This module provides logging functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - Logger      - Main logger type
+// - LogLevel    - Log level enum
+// - LogFormat   - Output format
+//
+// Functions:
+// ----------
+// - log(level, msg)    - Log a message
+// - debug(msg)         - Log debug message
+// - info(msg)          - Log info message
+// - warn(msg)          - Log warning message
+// - error(msg)         - Log error message
+// - fatal(msg)         - Log fatal message and exit
+//
+// Examples:
+// ---------
+// // Simple logging
+// info("Application started");
+// warn("Configuration file not found, using defaults");
+// error("Failed to connect to database");
+//
+// // Custom logger
+// Logger* logger = Logger.new("myapp");
+// logger.set_level(LogLevel.DEBUG);
+// logger.debug("Debug information");
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_WRITE = 1;
+int SYS_EXIT = 60;
+
+// File descriptors
+int STDOUT = 1;
+int STDERR = 2;
+
+// Log levels
+int LOG_LEVEL_TRACE = 0;
+int LOG_LEVEL_DEBUG = 1;
+int LOG_LEVEL_INFO = 2;
+int LOG_LEVEL_WARN = 3;
+int LOG_LEVEL_ERROR = 4;
+int LOG_LEVEL_FATAL = 5;
+int LOG_LEVEL_OFF = 6;
+
+// ANSI colors
+int ANSI_RESET = 0;
+int ANSI_RED = 31;
+int ANSI_GREEN = 32;
+int ANSI_YELLOW = 33;
+int ANSI_BLUE = 34;
+int ANSI_MAGENTA = 35;
+int ANSI_CYAN = 36;
+int ANSI_WHITE = 37;
+int ANSI_BOLD = 1;
+
+// Error handling
+int ERRNO;
+
+// Default logger name
+bytes DEFAULT_LOGGER_NAME = "default";
+
+// =============================================================================
+// Log Level Type
+// =============================================================================
+
+struct LogLevel {
+    level: int;
+    name: str*;
+    color: int;
+}
+
+impl LogLevel {
+    fn trace() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_TRACE;
+        l.name = "TRACE";
+        l.color = ANSI_CYAN;
+        return l;
+    }
+    
+    fn debug() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_DEBUG;
+        l.name = "DEBUG";
+        l.color = ANSI_BLUE;
+        return l;
+    }
+    
+    fn info() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_INFO;
+        l.name = "INFO";
+        l.color = ANSI_GREEN;
+        return l;
+    }
+    
+    fn warn() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_WARN;
+        l.name = "WARN";
+        l.color = ANSI_YELLOW;
+        return l;
+    }
+    
+    fn error() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_ERROR;
+        l.name = "ERROR";
+        l.color = ANSI_RED;
+        return l;
+    }
+    
+    fn fatal() -> LogLevel* {
+        LogLevel* l = new LogLevel();
+        l.level = LOG_LEVEL_FATAL;
+        l.name = "FATAL";
+        l.color = ANSI_MAGENTA;
+        return l;
+    }
+    
+    fn from_int(level: int) -> LogLevel* {
+        if (level == LOG_LEVEL_TRACE) {
+            return LogLevel.trace();
+        }
+        if (level == LOG_LEVEL_DEBUG) {
+            return LogLevel.debug();
+        }
+        if (level == LOG_LEVEL_INFO) {
+            return LogLevel.info();
+        }
+        if (level == LOG_LEVEL_WARN) {
+            return LogLevel.warn();
+        }
+        if (level == LOG_LEVEL_ERROR) {
+            return LogLevel.error();
+        }
+        if (level == LOG_LEVEL_FATAL) {
+            return LogLevel.fatal();
+        }
+        return LogLevel.info();
+    }
+}
+
+// =============================================================================
+// LogRecord Type
+// =============================================================================
+
+struct LogRecord {
+    level: LogLevel*;
+    message: str*;
+    logger_name: str*;
+    timestamp: int;
+    file: str*;
+    line: int;
+}
+
+impl LogRecord {
+    fn new(level: LogLevel*, message: str*, logger_name: str*) -> LogRecord* {
+        LogRecord* r = new LogRecord();
+        r.level = level;
+        r.message = message;
+        r.logger_name = logger_name;
+        r.timestamp = 0;  // Would get current time
+        r.file = "";
+        r.line = 0;
+        return r;
+    }
+}
+
+// =============================================================================
+// Logger Type
+// =============================================================================
+
+struct Logger {
+    name: str*;
+    level: int;
+    use_colors: bool;
+    output_fd: int;
+    show_timestamp: bool;
+    show_level: bool;
+    show_name: bool;
+}
+
+impl Logger {
+    constructor() {
+        self.name = DEFAULT_LOGGER_NAME;
+        self.level = LOG_LEVEL_INFO;
+        self.use_colors = true;
+        self.output_fd = STDERR;
+        self.show_timestamp = true;
+        self.show_level = true;
+        self.show_name = true;
+    }
+    
+    fn new(name: str*) -> Logger* {
+        Logger* l = new Logger();
+        l.name = name;
+        l.level = LOG_LEVEL_INFO;
+        l.use_colors = true;
+        l.output_fd = STDERR;
+        l.show_timestamp = true;
+        l.show_level = true;
+        l.show_name = true;
+        return l;
+    }
+    
+    // Set log level
+    fn set_level(self, level: int) -> void {
+        self.level = level;
+    }
+    
+    // Enable/disable colors
+    fn set_colors(self, enabled: bool) -> void {
+        self.use_colors = enabled;
+    }
+    
+    // Set output file descriptor
+    fn set_output(self, fd: int) -> void {
+        self.output_fd = fd;
+    }
+    
+    // Check if level is loggable
+    fn is_loggable(self, level: int) -> bool {
+        return level >= self.level;
+    }
+    
+    // Log a message
+    fn log(self, level: int, message: str*) -> void {
+        if (!self.is_loggable(level)) {
+            return;
+        }
+        
+        LogLevel* lvl = LogLevel.from_int(level);
+        self._write_log(lvl, message);
+    }
+    
+    // Log trace
+    fn trace(self, message: str*) -> void {
+        self.log(LOG_LEVEL_TRACE, message);
+    }
+    
+    // Log debug
+    fn debug(self, message: str*) -> void {
+        self.log(LOG_LEVEL_DEBUG, message);
+    }
+    
+    // Log info
+    fn info(self, message: str*) -> void {
+        self.log(LOG_LEVEL_INFO, message);
+    }
+    
+    // Log warning
+    fn warn(self, message: str*) -> void {
+        self.log(LOG_LEVEL_WARN, message);
+    }
+    
+    // Log error
+    fn error(self, message: str*) -> void {
+        self.log(LOG_LEVEL_ERROR, message);
+    }
+    
+    // Log fatal and exit
+    fn fatal(self, message: str*) -> void {
+        self.log(LOG_LEVEL_FATAL, message);
+        syscall SYS_EXIT, 1, ERRNO;
+    }
+    
+    // Log with format (simplified)
+    fn log_fmt(self, level: int, format: str*, arg: str*) -> void {
+        // Would need string formatting - simplified for now
+        self.log(level, format);
+    }
+    
+    // Write log output
+    fn _write_log(self, level: LogLevel*, message: str*) -> void {
+        // Build log line: [TIMESTAMP] LEVEL NAME: message
+        // Simplified version - just output the message with level
+        
+        // Write ANSI color
+        if (self.use_colors) {
+            self._write_color(level.color);
+        }
+        
+        // Write level name
+        self._write_str("[");
+        self._write_str(level.name);
+        self._write_str("] ");
+        
+        // Write logger name
+        if (self.show_name) {
+            self._write_str(self.name);
+            self._write_str(": ");
+        }
+        
+        // Write message
+        self._write_str(message);
+        
+        // Reset color
+        if (self.use_colors) {
+            self._write_reset();
+        }
+        
+        // Newline
+        self._write_str("\n");
+    }
+    
+    // Write string to output
+    fn _write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int ret;
+        syscall SYS_WRITE, self.output_fd, s, len, ret;
+    }
+    
+    // Write ANSI color code
+    fn _write_color(self, color: int) -> void {
+        // ESC[1;colorm
+        bytes buf = "\x1b[1;00m";
+        buf[5] = 48 + (color / 10) % 10;
+        buf[6] = 48 + color % 10;
+        
+        int ret;
+        syscall SYS_WRITE, self.output_fd, buf, 7, ret;
+    }
+    
+    // Write ANSI reset code
+    fn _write_reset(self) -> void {
+        bytes buf = "\x1b[0m";
+        int ret;
+        syscall SYS_WRITE, self.output_fd, buf, 4, ret;
+    }
+}
+
+// =============================================================================
+// Global Logger Functions
+// =============================================================================
+
+// Global logger instance
+Logger* _global_logger = 0;
+
+// Get or create global logger
+fn _get_logger() -> Logger* {
+    if (_global_logger == 0) {
+        _global_logger = Logger.new(DEFAULT_LOGGER_NAME);
+    }
+    return _global_logger;
+}
+
+// Set global logger
+fn set_logger(logger: Logger*) -> void {
+    _global_logger = logger;
+}
+
+// Set global log level
+fn set_level(level: int) -> void {
+    _get_logger().set_level(level);
+}
+
+// Enable/disable colors globally
+fn set_colors(enabled: bool) -> void {
+    _get_logger().set_colors(enabled);
+}
+
+// Global trace
+fn trace(message: str*) -> void {
+    _get_logger().trace(message);
+}
+
+// Global debug
+fn debug(message: str*) -> void {
+    _get_logger().debug(message);
+}
+
+// Global info
+fn info(message: str*) -> void {
+    _get_logger().info(message);
+}
+
+// Global warn
+fn warn(message: str*) -> void {
+    _get_logger().warn(message);
+}
+
+// Global error
+fn error(message: str*) -> void {
+    _get_logger().error(message);
+}
+
+// Global fatal
+fn fatal(message: str*) -> void {
+    _get_logger().fatal(message);
+}
+
+// =============================================================================
+// Log Macros (for compile-time log level filtering)
+// =============================================================================
+
+// These would be implemented as macros when macro support is complete
+// macro log_trace($msg) { if (LOG_LEVEL >= LOG_LEVEL_TRACE) { trace($msg); } }
+// macro log_debug($msg) { if (LOG_LEVEL >= LOG_LEVEL_DEBUG) { debug($msg); } }
+// macro log_info($msg) { if (LOG_LEVEL >= LOG_LEVEL_INFO) { info($msg); } }
+// macro log_warn($msg) { if (LOG_LEVEL >= LOG_LEVEL_WARN) { warn($msg); } }
+// macro log_error($msg) { if (LOG_LEVEL >= LOG_LEVEL_ERROR) { error($msg); } }

@@ -1,0 +1,577 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/hash/hash.mv
+// description: Hash functions module with OOP design
+//
+// This module provides hash functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - Hasher       - Trait-like interface for hashers
+// - Fnv1aHasher  - FNV-1a hash implementation
+// - Djb2Hasher   - DJB2 hash implementation
+// - SipHasher    - SipHash-2-4 implementation
+//
+// Functions:
+// ----------
+// - hash_str(s)      - Hash a string using FNV-1a
+// - hash_int(n)      - Hash an integer
+// - hash_bytes(data) - Hash a byte array
+// - hash_combine(h1, h2) - Combine two hashes
+//
+// Examples:
+// ---------
+// // Hash a string
+// int h = hash_str("hello world");
+//
+// // Use FNV-1a hasher
+// Fnv1aHasher* hasher = Fnv1aHasher.new();
+// hasher.write_str("hello");
+// hasher.write_str(" ");
+// hasher.write_str("world");
+// int result = hasher.finish();
+//
+// // Combine hashes for struct
+// int h1 = hash_str(name);
+// int h2 = hash_int(age);
+// int combined = hash_combine(h1, h2);
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// FNV-1a constants (64-bit)
+int FNV_OFFSET_BASIS = 14695981039346656037;
+int FNV_PRIME = 1099511628211;
+
+// DJB2 constants
+int DJB2_INIT = 5381;
+int DJB2_MAGIC = 33;
+
+// SipHash constants
+int SIPHASH_C_ROUNDS = 2;
+int SIPHASH_D_ROUNDS = 4;
+
+// MurmurHash3 constants
+int MURMUR_C1 = 0x87c37b91114253d5;
+int MURMUR_C2 = 0x4cf5ad432745937f;
+
+// =============================================================================
+// Hash Functions (Standalone)
+// =============================================================================
+
+// FNV-1a hash for strings
+// This is a fast, non-cryptographic hash function
+fn hash_str(s: str*) -> int {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int hash = FNV_OFFSET_BASIS;
+    int i = 0;
+    
+    while (i < len) {
+        hash = hash ^ s[i];
+        hash = hash * FNV_PRIME;
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// FNV-1a hash for bytes
+fn hash_bytes(data: bytes*, len: int) -> int {
+    int hash = FNV_OFFSET_BASIS;
+    int i = 0;
+    
+    while (i < len) {
+        hash = hash ^ data[i];
+        hash = hash * FNV_PRIME;
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// FNV-1a hash for integers
+fn hash_int(n: int) -> int {
+    int hash = FNV_OFFSET_BASIS;
+    
+    // Process each byte
+    int i = 0;
+    while (i < 8) {
+        int byte_val = (n >> (i * 8)) & 0xFF;
+        hash = hash ^ byte_val;
+        hash = hash * FNV_PRIME;
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// DJB2 hash for strings (simple and fast)
+fn hash_djb2(s: str*) -> int {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int hash = DJB2_INIT;
+    int i = 0;
+    
+    while (i < len) {
+        hash = ((hash << 5) + hash) + s[i];  // hash * 33 + c
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// DJB2 variant with XOR
+fn hash_djb2a(s: str*) -> int {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int hash = DJB2_INIT;
+    int i = 0;
+    
+    while (i < len) {
+        hash = ((hash << 5) + hash) ^ s[i];  // hash * 33 ^ c
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// Jenkins one-at-a-time hash
+fn hash_jenkins(s: str*) -> int {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int hash = 0;
+    int i = 0;
+    
+    while (i < len) {
+        hash = hash + s[i];
+        hash = hash + (hash << 10);
+        hash = hash ^ (hash >> 6);
+        i = i + 1;
+    }
+    
+    // Finalize
+    hash = hash + (hash << 3);
+    hash = hash ^ (hash >> 11);
+    hash = hash + (hash << 15);
+    
+    return hash;
+}
+
+// Combine two hashes (for struct hashing)
+fn hash_combine(h1: int, h2: int) -> int {
+    // Use boost-style hash combine
+    return h1 ^ (h2 * FNV_PRIME + 2654435769);
+}
+
+// Rotate left (for hash algorithms)
+fn rotate_left(x: int, k: int) -> int {
+    return (x << k) | (x >> (64 - k));
+}
+
+// =============================================================================
+// Fnv1aHasher Type
+// =============================================================================
+
+struct Fnv1aHasher {
+    state: int;
+}
+
+impl Fnv1aHasher {
+    constructor() {
+        self.state = FNV_OFFSET_BASIS;
+    }
+    
+    fn new() -> Fnv1aHasher* {
+        Fnv1aHasher* h = new Fnv1aHasher();
+        h.state = FNV_OFFSET_BASIS;
+        return h;
+    }
+    
+    // Write a single byte
+    fn write_byte(self, byte: int) -> void {
+        self.state = self.state ^ (byte & 0xFF);
+        self.state = self.state * FNV_PRIME;
+    }
+    
+    // Write multiple bytes
+    fn write(self, data: bytes*, len: int) -> void {
+        int i = 0;
+        while (i < len) {
+            self.write_byte(data[i]);
+            i = i + 1;
+        }
+    }
+    
+    // Write a string
+    fn write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int i = 0;
+        while (i < len) {
+            self.write_byte(s[i]);
+            i = i + 1;
+        }
+    }
+    
+    // Write an integer
+    fn write_int(self, n: int) -> void {
+        int i = 0;
+        while (i < 8) {
+            self.write_byte((n >> (i * 8)) & 0xFF);
+            i = i + 1;
+        }
+    }
+    
+    // Get the current hash value
+    fn finish(self) -> int {
+        return self.state;
+    }
+    
+    // Reset the hasher
+    fn reset(self) -> void {
+        self.state = FNV_OFFSET_BASIS;
+    }
+}
+
+// =============================================================================
+// Djb2Hasher Type
+// =============================================================================
+
+struct Djb2Hasher {
+    state: int;
+}
+
+impl Djb2Hasher {
+    constructor() {
+        self.state = DJB2_INIT;
+    }
+    
+    fn new() -> Djb2Hasher* {
+        Djb2Hasher* h = new Djb2Hasher();
+        h.state = DJB2_INIT;
+        return h;
+    }
+    
+    fn write_byte(self, byte: int) -> void {
+        self.state = ((self.state << 5) + self.state) + (byte & 0xFF);
+    }
+    
+    fn write(self, data: bytes*, len: int) -> void {
+        int i = 0;
+        while (i < len) {
+            self.write_byte(data[i]);
+            i = i + 1;
+        }
+    }
+    
+    fn write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int i = 0;
+        while (i < len) {
+            self.write_byte(s[i]);
+            i = i + 1;
+        }
+    }
+    
+    fn finish(self) -> int {
+        return self.state;
+    }
+    
+    fn reset(self) -> void {
+        self.state = DJB2_INIT;
+    }
+}
+
+// =============================================================================
+// SipHasher Type (SipHash-2-4)
+// =============================================================================
+
+struct SipHasher {
+    v0: int;
+    v1: int;
+    v2: int;
+    v3: int;
+    buffer: bytes<8>;
+    buffer_len: int;
+    total_len: int;
+}
+
+impl SipHasher {
+    constructor() {
+        self.v0 = 0x736f6d6570736575;  // "somepseu"
+        self.v1 = 0x646f72616e646f6d;  // "dorandom"
+        self.v2 = 0x6c7967656e657261;  // "lygenera"
+        self.v3 = 0x7465646279746573;  // "tedbytes"
+        self.buffer_len = 0;
+        self.total_len = 0;
+    }
+    
+    // Create with key
+    fn with_key(key: int) -> SipHasher* {
+        SipHasher* h = new SipHasher();
+        
+        // Initialize with key
+        int k0 = key;
+        int k1 = key ^ 0x5a5a5a5a5a5a5a5a;
+        
+        h.v0 = 0x736f6d6570736575 ^ k0;
+        h.v1 = 0x646f72616e646f6d ^ k1;
+        h.v2 = 0x6c7967656e657261 ^ k0;
+        h.v3 = 0x7465646279746573 ^ k1;
+        
+        h.buffer_len = 0;
+        h.total_len = 0;
+        
+        return h;
+    }
+    
+    fn new() -> SipHasher* {
+        return SipHasher.with_key(0);
+    }
+    
+    // SipHash round
+    fn _round(self) -> void {
+        self.v0 = self.v0 + self.v1;
+        self.v1 = rotate_left(self.v1, 13);
+        self.v1 = self.v1 ^ self.v0;
+        self.v0 = rotate_left(self.v0, 32);
+        
+        self.v2 = self.v2 + self.v3;
+        self.v3 = rotate_left(self.v3, 16);
+        self.v3 = self.v3 ^ self.v2;
+        
+        self.v0 = self.v0 + self.v3;
+        self.v3 = rotate_left(self.v3, 21);
+        self.v3 = self.v3 ^ self.v0;
+        
+        self.v2 = self.v2 + self.v1;
+        self.v1 = rotate_left(self.v1, 17);
+        self.v1 = self.v1 ^ self.v2;
+        self.v2 = rotate_left(self.v2, 32);
+    }
+    
+    // Write bytes
+    fn write(self, data: bytes*, len: int) -> void {
+        int i = 0;
+        
+        while (i < len) {
+            if (self.buffer_len < 8) {
+                self.buffer[self.buffer_len] = data[i];
+                self.buffer_len = self.buffer_len + 1;
+                self.total_len = self.total_len + 1;
+                
+                if (self.buffer_len == 8) {
+                    self._process_block();
+                    self.buffer_len = 0;
+                }
+            }
+            i = i + 1;
+        }
+    }
+    
+    // Process a block
+    fn _process_block(self) -> void {
+        // Convert buffer to int (little-endian)
+        int block = 0;
+        int i = 0;
+        while (i < 8) {
+            block = block | (self.buffer[i] << (i * 8));
+            i = i + 1;
+        }
+        
+        self.v3 = self.v3 ^ block;
+        
+        // 2 rounds
+        self._round();
+        self._round();
+        
+        self.v0 = self.v0 ^ block;
+    }
+    
+    // Finish hashing
+    fn finish(self) -> int {
+        // Process remaining bytes
+        int last = 0;
+        int i = 0;
+        while (i < self.buffer_len) {
+            last = last | (self.buffer[i] << (i * 8));
+            i = i + 1;
+        }
+        
+        // Add length in top byte
+        last = last | ((self.total_len & 0xFF) << 56);
+        
+        self.v3 = self.v3 ^ last;
+        
+        // 2 rounds
+        self._round();
+        self._round();
+        
+        self.v0 = self.v0 ^ last;
+        
+        // Finalize
+        self.v2 = self.v2 ^ 0xFF;
+        
+        // 4 rounds
+        self._round();
+        self._round();
+        self._round();
+        self._round();
+        
+        return self.v0 ^ self.v1 ^ self.v2 ^ self.v3;
+    }
+    
+    fn reset(self) -> void {
+        self.v0 = 0x736f6d6570736575;
+        self.v1 = 0x646f72616e646f6d;
+        self.v2 = 0x6c7967656e657261;
+        self.v3 = 0x7465646279746573;
+        self.buffer_len = 0;
+        self.total_len = 0;
+    }
+}
+
+// =============================================================================
+// JenkinsHasher Type
+// =============================================================================
+
+struct JenkinsHasher {
+    state: int;
+}
+
+impl JenkinsHasher {
+    constructor() {
+        self.state = 0;
+    }
+    
+    fn new() -> JenkinsHasher* {
+        return new JenkinsHasher();
+    }
+    
+    fn write_byte(self, byte: int) -> void {
+        self.state = self.state + (byte & 0xFF);
+        self.state = self.state + (self.state << 10);
+        self.state = self.state ^ (self.state >> 6);
+    }
+    
+    fn write(self, data: bytes*, len: int) -> void {
+        int i = 0;
+        while (i < len) {
+            self.write_byte(data[i]);
+            i = i + 1;
+        }
+    }
+    
+    fn write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int i = 0;
+        while (i < len) {
+            self.write_byte(s[i]);
+            i = i + 1;
+        }
+    }
+    
+    fn finish(self) -> int {
+        int hash = self.state;
+        
+        // Finalize
+        hash = hash + (hash << 3);
+        hash = hash ^ (hash >> 11);
+        hash = hash + (hash << 15);
+        
+        return hash;
+    }
+    
+    fn reset(self) -> void {
+        self.state = 0;
+    }
+}
+
+// =============================================================================
+// Hash Builder (For building hashes of complex types)
+// =============================================================================
+
+struct HashBuilder {
+    hasher: Fnv1aHasher*;
+}
+
+impl HashBuilder {
+    constructor() {
+        self.hasher = Fnv1aHasher.new();
+    }
+    
+    fn new() -> HashBuilder* {
+        HashBuilder* b = new HashBuilder();
+        b.hasher = Fnv1aHasher.new();
+        return b;
+    }
+    
+    // Hash a string
+    fn hash_str(self, s: str*) -> void {
+        self.hasher.write_str(s);
+    }
+    
+    // Hash an integer
+    fn hash_int(self, n: int) -> void {
+        self.hasher.write_int(n);
+    }
+    
+    // Hash a bool
+    fn hash_bool(self, b: bool) -> void {
+        self.hasher.write_byte(b ? 1 : 0);
+    }
+    
+    // Hash a byte
+    fn hash_byte(self, byte: int) -> void {
+        self.hasher.write_byte(byte);
+    }
+    
+    // Hash bytes
+    fn hash_bytes(self, data: bytes*, len: int) -> void {
+        self.hasher.write(data, len);
+    }
+    
+    // Finish and get hash
+    fn finish(self) -> int {
+        return self.hasher.finish();
+    }
+    
+    // Reset for new hash
+    fn reset(self) -> void {
+        self.hasher.reset();
+    }
+}

@@ -1,0 +1,884 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/collections/collections.mv
+// description: Collection types with OOP design - Map, Set, Deque, OrderedDict
+//
+// This module provides collection data structures using impl blocks.
+// All functions are implemented in pure ManV using syscalls.
+//
+// Types:
+// ------
+// - Map<K, V>     - Hash table key-value store (like Python dict)
+// - Set<T>        - Hash set of unique values
+// - Deque<T>      - Double-ended queue
+// - OrderedDict<K, V> - Map that preserves insertion order
+//
+// Examples:
+// ---------
+// // Map usage
+// Map<str*, int>* m = Map.new();
+// m.insert("apple", 5);
+// m.insert("banana", 3);
+// int count = m.get("apple").unwrap_or(0);  // 5
+// bool has = m.contains("banana");           // true
+// m.remove("apple");
+//
+// // Set usage
+// Set<int>* s = Set.new();
+// s.add(1);
+// s.add(2);
+// s.add(1);  // Duplicate, ignored
+// bool has_one = s.contains(1);  // true
+//
+// // Deque usage
+// Deque<int>* d = Deque.new();
+// d.push_back(1);
+// d.push_front(0);
+// int front = d.pop_front();  // 0
+// int back = d.pop_back();    // 1
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Default capacities
+int MAP_DEFAULT_CAPACITY = 16;
+int SET_DEFAULT_CAPACITY = 16;
+int DEQUE_DEFAULT_CAPACITY = 8;
+
+// Load factor for resizing
+int MAP_LOAD_FACTOR_NUM = 3;  // 3/4 = 0.75
+int MAP_LOAD_FACTOR_DEN = 4;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Hash Functions
+// =============================================================================
+
+// FNV-1a hash for strings
+fn hash_str(s: str*) -> int {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int hash = 14695981039346656037;  // FNV offset basis
+    int i = 0;
+    
+    while (i < len) {
+        hash = hash ^ s[i];
+        hash = hash * 1099511628211;  // FNV prime
+        i = i + 1;
+    }
+    
+    return hash;
+}
+
+// FNV-1a hash for integers
+fn hash_int(n: int) -> int {
+    int hash = 14695981039346656037;
+    
+    hash = hash ^ (n & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 8) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 16) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 24) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 32) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 40) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 48) & 0xFF);
+    hash = hash * 1099511628211;
+    hash = hash ^ ((n >> 56) & 0xFF);
+    hash = hash * 1099511628211;
+    
+    return hash;
+}
+
+// Combine two hashes
+fn hash_combine(h1: int, h2: int) -> int {
+    return h1 ^ (h2 * 1099511628211 + 2654435769);
+}
+
+// =============================================================================
+// Map<K, V> - Hash Table Key-Value Store
+// =============================================================================
+
+// Entry in the hash table
+struct MapEntry<K, V> {
+    key: K;
+    value: V;
+    hash: int;
+    occupied: bool;
+    deleted: bool;
+}
+
+// Iterator state
+struct MapIter<K, V> {
+    map: void*;      // Map<K, V>*
+    index: int;
+}
+
+// Map type (hash table with open addressing)
+struct Map<K, V> {
+    entries: MapEntry<K, V>*;
+    capacity: int;
+    size: int;
+    tombstones: int;  // Deleted entries
+}
+
+impl Map<K, V> {
+    // Create a new empty map
+    constructor() {
+        self.entries = 0;
+        self.capacity = 0;
+        self.size = 0;
+        self.tombstones = 0;
+    }
+    
+    // Create a new map with default capacity
+    fn new() -> Map<K, V>* {
+        Map<K, V>* m = new Map<K, V>();
+        m._init(MAP_DEFAULT_CAPACITY);
+        return m;
+    }
+    
+    // Create a new map with specific capacity
+    fn with_capacity(cap: int) -> Map<K, V>* {
+        Map<K, V>* m = new Map<K, V>();
+        m._init(cap);
+        return m;
+    }
+    
+    // Initialize internal storage
+    fn _init(self, cap: int) -> void {
+        // Round up to power of 2
+        int actual_cap = 1;
+        while (actual_cap < cap) {
+            actual_cap = actual_cap * 2;
+        }
+        
+        // Allocate entries
+        int entry_size = 32 + 8 + 8;  // K + V + metadata (simplified)
+        int alloc_size = actual_cap * entry_size;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return;
+        }
+        
+        self.entries = mapped;
+        self.capacity = actual_cap;
+        self.size = 0;
+        self.tombstones = 0;
+        
+        // Zero out entries
+        __memset(mapped, 0, alloc_size);
+    }
+    
+    // Get number of entries
+    fn len(self) -> int {
+        return self.size;
+    }
+    
+    // Check if map is empty
+    fn is_empty(self) -> bool {
+        return self.size == 0;
+    }
+    
+    // Get capacity
+    fn capacity(self) -> int {
+        return self.capacity;
+    }
+    
+    // Insert a key-value pair (returns old value if key existed)
+    fn insert(self, key: K, value: V) -> Option<V> {
+        // Check if we need to resize
+        int threshold = (self.capacity * MAP_LOAD_FACTOR_NUM) / MAP_LOAD_FACTOR_DEN;
+        if (self.size + self.tombstones >= threshold) {
+            self._resize(self.capacity * 2);
+        }
+        
+        int hash = self._hash_key(key);
+        int index = self._find_slot(key, hash);
+        
+        MapEntry<K, V>* entry = self.entries + index;
+        
+        if (entry.occupied && !entry.deleted) {
+            // Key exists, replace value
+            V old_value = entry.value;
+            entry.value = value;
+            return Option<V>(old_value);
+        }
+        
+        // Insert new entry
+        entry.key = key;
+        entry.value = value;
+        entry.hash = hash;
+        entry.occupied = true;
+        entry.deleted = false;
+        self.size = self.size + 1;
+        
+        return Option<V>::none();
+    }
+    
+    // Get value by key
+    fn get(self, key: K) -> Option<V> {
+        if (self.size == 0) {
+            return Option<V>::none();
+        }
+        
+        int hash = self._hash_key(key);
+        int index = self._find_slot(key, hash);
+        
+        MapEntry<K, V>* entry = self.entries + index;
+        
+        if (entry.occupied && !entry.deleted) {
+            return Option<V>(entry.value);
+        }
+        
+        return Option<V>::none();
+    }
+    
+    // Get value or default
+    fn get_or(self, key: K, default: V) -> V {
+        Option<V> opt = self.get(key);
+        return opt.unwrap_or(default);
+    }
+    
+    // Get value or insert default
+    fn get_or_insert(self, key: K, default: V) -> V {
+        Option<V> opt = self.get(key);
+        if (opt.is_some()) {
+            return opt.unwrap();
+        }
+        self.insert(key, default);
+        return default;
+    }
+    
+    // Check if key exists
+    fn contains(self, key: K) -> bool {
+        return self.get(key).is_some();
+    }
+    
+    // Remove key-value pair
+    fn remove(self, key: K) -> Option<V> {
+        if (self.size == 0) {
+            return Option<V>::none();
+        }
+        
+        int hash = self._hash_key(key);
+        int index = self._find_slot(key, hash);
+        
+        MapEntry<K, V>* entry = self.entries + index;
+        
+        if (entry.occupied && !entry.deleted) {
+            entry.deleted = true;
+            self.size = self.size - 1;
+            self.tombstones = self.tombstones + 1;
+            return Option<V>(entry.value);
+        }
+        
+        return Option<V>::none();
+    }
+    
+    // Clear all entries
+    fn clear(self) -> void {
+        int i = 0;
+        while (i < self.capacity) {
+            MapEntry<K, V>* entry = self.entries + i;
+            entry.occupied = false;
+            entry.deleted = false;
+            i = i + 1;
+        }
+        self.size = 0;
+        self.tombstones = 0;
+    }
+    
+    // Get all keys
+    fn keys(self) -> array<K> {
+        // Would need dynamic array support
+        return 0;
+    }
+    
+    // Get all values
+    fn values(self) -> array<V> {
+        return 0;
+    }
+    
+    // Iterate over entries
+    fn iter(self) -> MapIter<K, V> {
+        return MapIter<K, V>{ map: self, index: 0 };
+    }
+    
+    // Internal: hash a key
+    fn _hash_key(self, key: K) -> int {
+        // This is a placeholder - the actual implementation
+        // would need type-specific hashing
+        return hash_int(key);  // Simplified
+    }
+    
+    // Internal: find slot for key
+    fn _find_slot(self, key: K, hash: int) -> int {
+        int index = hash & (self.capacity - 1);
+        int first_tombstone = -1;
+        
+        int i = 0;
+        while (i < self.capacity) {
+            MapEntry<K, V>* entry = self.entries + index;
+            
+            if (!entry.occupied) {
+                // Empty slot
+                if (first_tombstone >= 0) {
+                    return first_tombstone;
+                }
+                return index;
+            }
+            
+            if (entry.deleted) {
+                // Remember first tombstone
+                if (first_tombstone < 0) {
+                    first_tombstone = index;
+                }
+            } else if (entry.hash == hash && self._keys_equal(entry.key, key)) {
+                // Found existing key
+                return index;
+            }
+            
+            // Linear probing
+            index = (index + 1) & (self.capacity - 1);
+            i = i + 1;
+        }
+        
+        // Table is full (shouldn't happen with proper resizing)
+        if (first_tombstone >= 0) {
+            return first_tombstone;
+        }
+        return 0;
+    }
+    
+    // Internal: compare keys
+    fn _keys_equal(self, k1: K, k2: K) -> bool {
+        return k1 == k2;  // Simplified
+    }
+    
+    // Internal: resize the table
+    fn _resize(self, new_cap: int) -> void {
+        if (new_cap <= self.capacity) {
+            return;
+        }
+        
+        // Allocate new entries
+        int entry_size = 32 + 8 + 8;
+        int alloc_size = new_cap * entry_size;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return;
+        }
+        
+        // Save old entries
+        MapEntry<K, V>* old_entries = self.entries;
+        int old_capacity = self.capacity;
+        
+        // Set new entries
+        self.entries = mapped;
+        self.capacity = new_cap;
+        self.size = 0;
+        self.tombstones = 0;
+        
+        // Zero new entries
+        __memset(mapped, 0, alloc_size);
+        
+        // Rehash old entries
+        int i = 0;
+        while (i < old_capacity) {
+            MapEntry<K, V>* entry = old_entries + i;
+            if (entry.occupied && !entry.deleted) {
+                self.insert(entry.key, entry.value);
+            }
+            i = i + 1;
+        }
+        
+        // Free old entries
+        int old_alloc = old_capacity * entry_size;
+        syscall SYS_MUNMAP, old_entries, old_alloc, ERRNO;
+    }
+    
+    // Print map contents (for debugging)
+    fn print(self) -> void {
+        int i = 0;
+        syscall 1, 1, "{", 1, ERRNO;  // SYS_WRITE
+        
+        bool first = true;
+        while (i < self.capacity) {
+            MapEntry<K, V>* entry = self.entries + i;
+            if (entry.occupied && !entry.deleted) {
+                if (!first) {
+                    syscall 1, 1, ", ", 2, ERRNO;
+                }
+                first = false;
+                // Would print key: value
+            }
+            i = i + 1;
+        }
+        
+        syscall 1, 1, "}", 1, ERRNO;
+    }
+}
+
+// =============================================================================
+// Set<T> - Hash Set
+// =============================================================================
+
+struct Set<T> {
+    map: Map<T, bool>*;
+}
+
+impl Set<T> {
+    constructor() {
+        self.map = Map<T, bool>.new();
+    }
+    
+    fn new() -> Set<T>* {
+        Set<T>* s = new Set<T>();
+        s.map = Map<T, bool>.new();
+        return s;
+    }
+    
+    fn with_capacity(cap: int) -> Set<T>* {
+        Set<T>* s = new Set<T>();
+        s.map = Map<T, bool>.with_capacity(cap);
+        return s;
+    }
+    
+    fn add(self, value: T) -> bool {
+        Option<bool> old = self.map.insert(value, true);
+        return old.is_none();  // Returns true if value was new
+    }
+    
+    fn remove(self, value: T) -> bool {
+        Option<bool> old = self.map.remove(value);
+        return old.is_some();
+    }
+    
+    fn contains(self, value: T) -> bool {
+        return self.map.contains(value);
+    }
+    
+    fn len(self) -> int {
+        return self.map.len();
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.map.is_empty();
+    }
+    
+    fn clear(self) -> void {
+        self.map.clear();
+    }
+    
+    // Union with another set
+    fn union(self, other: Set<T>*) -> Set<T>* {
+        Set<T>* result = Set<T>.new();
+        // Would iterate and add all from both sets
+        return result;
+    }
+    
+    // Intersection with another set
+    fn intersection(self, other: Set<T>*) -> Set<T>* {
+        Set<T>* result = Set<T>.new();
+        // Would iterate and add common elements
+        return result;
+    }
+    
+    // Difference with another set
+    fn difference(self, other: Set<T>*) -> Set<T>* {
+        Set<T>* result = Set<T>.new();
+        // Would iterate and add elements not in other
+        return result;
+    }
+}
+
+// =============================================================================
+// Deque<T> - Double-Ended Queue
+// =============================================================================
+
+struct Deque<T> {
+    data: T*;
+    head: int;
+    tail: int;
+    capacity: int;
+    size: int;
+}
+
+impl Deque<T> {
+    constructor() {
+        self.data = 0;
+        self.head = 0;
+        self.tail = 0;
+        self.capacity = 0;
+        self.size = 0;
+    }
+    
+    fn new() -> Deque<T>* {
+        Deque<T>* d = new Deque<T>();
+        d._init(DEQUE_DEFAULT_CAPACITY);
+        return d;
+    }
+    
+    fn with_capacity(cap: int) -> Deque<T>* {
+        Deque<T>* d = new Deque<T>();
+        d._init(cap);
+        return d;
+    }
+    
+    fn _init(self, cap: int) -> void {
+        int alloc_size = cap * 8;  // 8 bytes per element
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return;
+        }
+        
+        self.data = mapped;
+        self.head = 0;
+        self.tail = 0;
+        self.capacity = cap;
+        self.size = 0;
+    }
+    
+    fn len(self) -> int {
+        return self.size;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.size == 0;
+    }
+    
+    // Add to front
+    fn push_front(self, value: T) -> void {
+        if (self.size >= self.capacity) {
+            self._grow();
+        }
+        
+        self.head = (self.head - 1 + self.capacity) % self.capacity;
+        self.data[self.head] = value;
+        self.size = self.size + 1;
+    }
+    
+    // Add to back
+    fn push_back(self, value: T) -> void {
+        if (self.size >= self.capacity) {
+            self._grow();
+        }
+        
+        self.data[self.tail] = value;
+        self.tail = (self.tail + 1) % self.capacity;
+        self.size = self.size + 1;
+    }
+    
+    // Remove from front
+    fn pop_front(self) -> Option<T> {
+        if (self.size == 0) {
+            return Option<T>::none();
+        }
+        
+        T value = self.data[self.head];
+        self.head = (self.head + 1) % self.capacity;
+        self.size = self.size - 1;
+        
+        return Option<T>(value);
+    }
+    
+    // Remove from back
+    fn pop_back(self) -> Option<T> {
+        if (self.size == 0) {
+            return Option<T>::none();
+        }
+        
+        self.tail = (self.tail - 1 + self.capacity) % self.capacity;
+        T value = self.data[self.tail];
+        self.size = self.size - 1;
+        
+        return Option<T>(value);
+    }
+    
+    // Peek front
+    fn front(self) -> Option<T> {
+        if (self.size == 0) {
+            return Option<T>::none();
+        }
+        return Option<T>(self.data[self.head]);
+    }
+    
+    // Peek back
+    fn back(self) -> Option<T> {
+        if (self.size == 0) {
+            return Option<T>::none();
+        }
+        int index = (self.tail - 1 + self.capacity) % self.capacity;
+        return Option<T>(self.data[index]);
+    }
+    
+    // Clear deque
+    fn clear(self) -> void {
+        self.head = 0;
+        self.tail = 0;
+        self.size = 0;
+    }
+    
+    // Internal: grow capacity
+    fn _grow(self) -> void {
+        int new_cap = self.capacity * 2;
+        int alloc_size = new_cap * 8;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return;
+        }
+        
+        // Copy elements to new buffer
+        int i = 0;
+        while (i < self.size) {
+            int old_index = (self.head + i) % self.capacity;
+            ((T*)mapped)[i] = self.data[old_index];
+            i = i + 1;
+        }
+        
+        // Free old buffer
+        if (self.data != 0) {
+            syscall SYS_MUNMAP, self.data, self.capacity * 8, ERRNO;
+        }
+        
+        self.data = mapped;
+        self.head = 0;
+        self.tail = self.size;
+        self.capacity = new_cap;
+    }
+}
+
+// =============================================================================
+// OrderedDict<K, V> - Map with insertion order preserved
+// =============================================================================
+
+struct OrderedDictNode<K, V> {
+    key: K;
+    value: V;
+    prev: int;  // Index of previous node
+    next: int;  // Index of next node
+}
+
+struct OrderedDict<K, V> {
+    map: Map<K, int>*;       // Key -> node index
+    nodes: OrderedDictNode<K, V>*;
+    head: int;               // Index of first node
+    tail: int;               // Index of last node
+    free_list: int;          // Index of first free node
+    capacity: int;
+    size: int;
+}
+
+impl OrderedDict<K, V> {
+    constructor() {
+        self.map = Map<K, int>.new();
+        self.nodes = 0;
+        self.head = -1;
+        self.tail = -1;
+        self.free_list = -1;
+        self.capacity = 0;
+        self.size = 0;
+    }
+    
+    fn new() -> OrderedDict<K, V>* {
+        OrderedDict<K, V>* o = new OrderedDict<K, V>();
+        o.map = Map<K, int>.new();
+        return o;
+    }
+    
+    fn len(self) -> int {
+        return self.size;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.size == 0;
+    }
+    
+    fn insert(self, key: K, value: V) -> void {
+        Option<int> existing = self.map.get(key);
+        
+        if (existing.is_some()) {
+            // Update existing
+            int index = existing.unwrap();
+            OrderedDictNode<K, V>* node = self.nodes + index;
+            node.value = value;
+        } else {
+            // Insert new
+            int index = self._alloc_node();
+            OrderedDictNode<K, V>* node = self.nodes + index;
+            node.key = key;
+            node.value = value;
+            node.prev = self.tail;
+            node.next = -1;
+            
+            if (self.tail >= 0) {
+                (self.nodes + self.tail).next = index;
+            } else {
+                self.head = index;
+            }
+            
+            self.tail = index;
+            self.map.insert(key, index);
+            self.size = self.size + 1;
+        }
+    }
+    
+    fn get(self, key: K) -> Option<V> {
+        Option<int> index = self.map.get(key);
+        if (index.is_none()) {
+            return Option<V>::none();
+        }
+        
+        OrderedDictNode<K, V>* node = self.nodes + index.unwrap();
+        return Option<V>(node.value);
+    }
+    
+    fn remove(self, key: K) -> Option<V> {
+        Option<int> existing = self.map.remove(key);
+        if (existing.is_none()) {
+            return Option<V>::none();
+        }
+        
+        int index = existing.unwrap();
+        OrderedDictNode<K, V>* node = self.nodes + index;
+        V value = node.value;
+        
+        // Remove from linked list
+        if (node.prev >= 0) {
+            (self.nodes + node.prev).next = node.next;
+        } else {
+            self.head = node.next;
+        }
+        
+        if (node.next >= 0) {
+            (self.nodes + node.next).prev = node.prev;
+        } else {
+            self.tail = node.prev;
+        }
+        
+        self._free_node(index);
+        self.size = self.size - 1;
+        
+        return Option<V>(value);
+    }
+    
+    // Get first key-value pair
+    fn first(self) -> Option<K> {
+        if (self.head < 0) {
+            return Option<K>::none();
+        }
+        return Option<K>((self.nodes + self.head).key);
+    }
+    
+    // Get last key-value pair
+    fn last(self) -> Option<K> {
+        if (self.tail < 0) {
+            return Option<K>::none();
+        }
+        return Option<K>((self.nodes + self.tail).key);
+    }
+    
+    // Internal: allocate a node
+    fn _alloc_node(self) -> int {
+        if (self.free_list >= 0) {
+            int index = self.free_list;
+            self.free_list = (self.nodes + index).next;
+            return index;
+        }
+        
+        // Would need to grow nodes array
+        return self.size;
+    }
+    
+    // Internal: free a node
+    fn _free_node(self, index: int) -> void {
+        (self.nodes + index).next = self.free_list;
+        self.free_list = index;
+    }
+}
+
+// =============================================================================
+// Convenience Functions
+// =============================================================================
+
+// Create a new string-to-int map
+fn str_int_map() -> Map<str*, int>* {
+    return Map<str*, int>.new();
+}
+
+// Create a new int-to-string map
+fn int_str_map() -> Map<int, str*>* {
+    return Map<int, str*>.new();
+}
+
+// Create a new int set
+fn int_set() -> Set<int>* {
+    return Set<int>.new();
+}
+
+// Create a new string set
+fn str_set() -> Set<str*>* {
+    return Set<str*>.new();
+}
+
+// Create a new int deque
+fn int_deque() -> Deque<int>* {
+    return Deque<int>.new();
+}

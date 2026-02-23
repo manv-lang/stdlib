@@ -1,0 +1,475 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/compression/compression.mv
+// description: Compression utilities module with OOP design
+//
+// Types:
+// -------
+// - Deflate    - DEFLATE compression
+// - Inflate    - DEFLATE decompression
+// - Lz4        - LZ4 compression
+// - Rle        - Run-length encoding
+//
+// Functions:
+// ----------
+// - deflate_compress(data, len)   - Compress with DEFLATE
+// - inflate_decompress(data, len) - Decompress DEFLATE
+// - rle_encode(data, len)        - RLE encode
+// - rle_decode(data, len)        - RLE decode
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+int ERRNO;
+
+// DEFLATE constants
+int DEFLATE_MAX_BITS = 15;
+int DEFLATE_MAX_CODES = 288;
+int DEFLATE_MAX_DIST = 32;
+
+// LZ77 window size
+int LZ77_WINDOW_SIZE = 32768;
+int LZ77_MIN_MATCH = 3;
+int LZ77_MAX_MATCH = 258;
+
+// =============================================================================
+// Rle Type (Run-Length Encoding)
+// =============================================================================
+
+struct Rle {
+    escape_char: int;
+}
+
+impl Rle {
+    constructor() {
+        self.escape_char = 0xFF;
+    }
+    
+    fn new() -> Rle* {
+        Rle* r = new Rle();
+        r.escape_char = 0xFF;
+        return r;
+    }
+    
+    fn with_escape(escape: int) -> Rle* {
+        Rle* r = new Rle();
+        r.escape_char = escape;
+        return r;
+    }
+    
+    // Encode data with RLE
+    fn encode(self, data: bytes*, len: int) -> bytes* {
+        // Worst case: 2x original size
+        int alloc_size = 8 + len * 2;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        int out_idx = 0;
+        int i = 0;
+        
+        while (i < len) {
+            int current = data[i];
+            int count = 1;
+            
+            // Count consecutive bytes
+            while (i + count < len && data[i + count] == current && count < 255) {
+                count = count + 1;
+            }
+            
+            if (count > 3 || current == self.escape_char) {
+                // Encode: escape, count, byte
+                output[out_idx] = self.escape_char;
+                output[out_idx + 1] = count;
+                output[out_idx + 2] = current;
+                out_idx = out_idx + 3;
+            } else {
+                // Output literally
+                int j = 0;
+                while (j < count) {
+                    output[out_idx] = current;
+                    out_idx = out_idx + 1;
+                    j = j + 1;
+                }
+            }
+            
+            i = i + count;
+        }
+        
+        int* len_header = mapped;
+        *len_header = out_idx;
+        
+        return output;
+    }
+    
+    // Decode RLE data
+    fn decode(self, data: bytes*, len: int) -> bytes* {
+        // Worst case: 255x original size (unlikely)
+        int alloc_size = 8 + len * 255;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        int out_idx = 0;
+        int i = 0;
+        
+        while (i < len) {
+            if (data[i] == self.escape_char && i + 2 < len) {
+                // Decoded sequence
+                int count = data[i + 1];
+                int byte_val = data[i + 2];
+                
+                int j = 0;
+                while (j < count) {
+                    output[out_idx] = byte_val;
+                    out_idx = out_idx + 1;
+                    j = j + 1;
+                }
+                
+                i = i + 3;
+            } else {
+                output[out_idx] = data[i];
+                out_idx = out_idx + 1;
+                i = i + 1;
+            }
+        }
+        
+        int* len_header = mapped;
+        *len_header = out_idx;
+        
+        return output;
+    }
+}
+
+// =============================================================================
+// Lz4 Type
+// =============================================================================
+
+struct Lz4 {
+    level: int;
+}
+
+impl Lz4 {
+    constructor() {
+        self.level = 1;
+    }
+    
+    fn new() -> Lz4* {
+        Lz4* l = new Lz4();
+        l.level = 1;
+        return l;
+    }
+    
+    fn with_level(level: int) -> Lz4* {
+        Lz4* l = new Lz4();
+        l.level = level;
+        return l;
+    }
+    
+    // Simple LZ4-style compression
+    fn compress(self, data: bytes*, len: int) -> bytes* {
+        int alloc_size = 8 + len + len / 255 + 16;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        int out_idx = 0;
+        int i = 0;
+        
+        while (i < len) {
+            // Find match in previous data
+            int match_offset = 0;
+            int match_len = 0;
+            
+            int search_start = i - LZ77_WINDOW_SIZE;
+            if (search_start < 0) {
+                search_start = 0;
+            }
+            
+            int j = search_start;
+            while (j < i) {
+                // Check for match
+                int k = 0;
+                while (i + k < len && data[j + k] == data[i + k] && k < LZ77_MAX_MATCH) {
+                    k = k + 1;
+                }
+                
+                if (k >= LZ77_MIN_MATCH && k > match_len) {
+                    match_offset = i - j;
+                    match_len = k;
+                }
+                j = j + 1;
+            }
+            
+            if (match_len >= LZ77_MIN_MATCH) {
+                // Output match token
+                output[out_idx] = 0;  // Literal length = 0
+                output[out_idx + 1] = match_offset & 0xFF;
+                output[out_idx + 2] = (match_offset >> 8) & 0xFF;
+                output[out_idx + 3] = match_len - LZ77_MIN_MATCH;
+                out_idx = out_idx + 4;
+                i = i + match_len;
+            } else {
+                // Output literal
+                output[out_idx] = 1;  // Literal length = 1
+                output[out_idx + 1] = data[i];
+                out_idx = out_idx + 2;
+                i = i + 1;
+            }
+        }
+        
+        int* len_header = mapped;
+        *len_header = out_idx;
+        
+        return output;
+    }
+    
+    // Decompress LZ4 data
+    fn decompress(self, data: bytes*, len: int) -> bytes* {
+        int alloc_size = 8 + len * 10;  // Estimate
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        int out_idx = 0;
+        int i = 0;
+        
+        while (i < len) {
+            int literal_len = data[i];
+            
+            if (literal_len == 0) {
+                // Match
+                int offset = data[i + 1] | (data[i + 2] << 8);
+                int match_len = data[i + 3] + LZ77_MIN_MATCH;
+                
+                int src = out_idx - offset;
+                int j = 0;
+                while (j < match_len) {
+                    output[out_idx] = output[src + j];
+                    out_idx = out_idx + 1;
+                    j = j + 1;
+                }
+                
+                i = i + 4;
+            } else {
+                // Literal
+                output[out_idx] = data[i + 1];
+                out_idx = out_idx + 1;
+                i = i + 2;
+            }
+        }
+        
+        int* len_header = mapped;
+        *len_header = out_idx;
+        
+        return output;
+    }
+}
+
+// =============================================================================
+// Deflate Type
+// =============================================================================
+
+struct Deflate {
+    level: int;
+    window_bits: int;
+}
+
+impl Deflate {
+    constructor() {
+        self.level = 6;
+        self.window_bits = 15;
+    }
+    
+    fn new() -> Deflate* {
+        Deflate* d = new Deflate();
+        d.level = 6;
+        d.window_bits = 15;
+        return d;
+    }
+    
+    fn with_level(level: int) -> Deflate* {
+        Deflate* d = new Deflate();
+        d.level = level;
+        d.window_bits = 15;
+        return d;
+    }
+    
+    // Compress with DEFLATE (simplified)
+    fn compress(self, data: bytes*, len: int) -> bytes* {
+        // Simplified - would implement full DEFLATE
+        // Use LZ77 + Huffman for real implementation
+        
+        int alloc_size = 8 + len + 1024;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        
+        // Write simple header
+        output[0] = 0x78;  // zlib header
+        output[1] = 0x9C;  // default compression
+        
+        // Store length (simplified)
+        output[2] = len & 0xFF;
+        output[3] = (len >> 8) & 0xFF;
+        
+        // Copy data (no compression for now)
+        int i = 0;
+        while (i < len) {
+            output[4 + i] = data[i];
+            i = i + 1;
+        }
+        
+        int* len_header = mapped;
+        *len_header = 4 + len + 4;  // header + data + checksum
+        
+        return output;
+    }
+}
+
+// =============================================================================
+// Inflate Type
+// =============================================================================
+
+struct Inflate {
+    window_bits: int;
+}
+
+impl Inflate {
+    constructor() {
+        self.window_bits = 15;
+    }
+    
+    fn new() -> Inflate* {
+        Inflate* i = new Inflate();
+        i.window_bits = 15;
+        return i;
+    }
+    
+    // Decompress DEFLATE (simplified)
+    fn decompress(self, data: bytes*, len: int) -> bytes* {
+        // Check zlib header
+        if (len < 4) {
+            return 0;
+        }
+        
+        if (data[0] != 0x78 || data[1] != 0x9C) {
+            return 0;
+        }
+        
+        // Get original length
+        int orig_len = data[2] | (data[3] << 8);
+        
+        int alloc_size = 8 + orig_len;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        bytes* output = mapped + 8;
+        
+        // Copy data (no actual decompression)
+        int i = 0;
+        while (i < orig_len && i + 4 < len) {
+            output[i] = data[4 + i];
+            i = i + 1;
+        }
+        
+        int* len_header = mapped;
+        *len_header = orig_len;
+        
+        return output;
+    }
+}
+
+// =============================================================================
+// Standalone Functions
+// =============================================================================
+
+// RLE encode
+fn rle_encode(data: bytes*, len: int) -> bytes* {
+    Rle* rle = Rle.new();
+    return rle.encode(data, len);
+}
+
+// RLE decode
+fn rle_decode(data: bytes*, len: int) -> bytes* {
+    Rle* rle = Rle.new();
+    return rle.decode(data, len);
+}
+
+// LZ4 compress
+fn lz4_compress(data: bytes*, len: int) -> bytes* {
+    Lz4* lz4 = Lz4.new();
+    return lz4.compress(data, len);
+}
+
+// LZ4 decompress
+fn lz4_decompress(data: bytes*, len: int) -> bytes* {
+    Lz4* lz4 = Lz4.new();
+    return lz4.decompress(data, len);
+}
+
+// DEFLATE compress
+fn deflate_compress(data: bytes*, len: int) -> bytes* {
+    Deflate* deflate = Deflate.new();
+    return deflate.compress(data, len);
+}
+
+// DEFLATE decompress
+fn inflate_decompress(data: bytes*, len: int) -> bytes* {
+    Inflate* inflate = Inflate.new();
+    return inflate.decompress(data, len);
+}

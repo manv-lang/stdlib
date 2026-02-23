@@ -1,0 +1,794 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/toml/toml.mv
+// description: TOML parsing and encoding module with OOP design
+//
+// This module provides TOML functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - TomlValue   - TOML value type
+// - TomlTable   - TOML table type
+// - TomlArray   - TOML array type
+// - TomlParser  - Parser for TOML strings
+// - TomlBuilder - Builder for TOML output
+//
+// Functions:
+// ----------
+// - toml_parse(s)       - Parse TOML string
+// - toml_stringify(v)   - Convert value to TOML string
+// - toml_get(table, key) - Get value from table
+//
+// Examples:
+// ---------
+// // Parse TOML
+// TomlTable* config = toml_parse("[server]\nhost = \"localhost\"\nport = 8080");
+// TomlValue* host = config.get("server.host");
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// TOML types
+int TOML_STRING = 0;
+int TOML_INT = 1;
+int TOML_FLOAT = 2;
+int TOML_BOOL = 3;
+int TOML_DATETIME = 4;
+int TOML_ARRAY = 5;
+int TOML_TABLE = 6;
+
+// =============================================================================
+// TomlValue Type
+// =============================================================================
+
+struct TomlValue {
+    type: int;
+    
+    // Union-like storage
+    str_val: str*;
+    int_val: int;
+    float_val: float;
+    bool_val: bool;
+    arr_val: TomlArray*;
+    table_val: TomlTable*;
+}
+
+impl TomlValue {
+    fn string(val: str*) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_STRING;
+        v.str_val = val;
+        return v;
+    }
+    
+    fn int(val: int) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_INT;
+        v.int_val = val;
+        return v;
+    }
+    
+    fn float(val: float) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_FLOAT;
+        v.float_val = val;
+        return v;
+    }
+    
+    fn bool(val: bool) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_BOOL;
+        v.bool_val = val;
+        return v;
+    }
+    
+    fn array(val: TomlArray*) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_ARRAY;
+        v.arr_val = val;
+        return v;
+    }
+    
+    fn table(val: TomlTable*) -> TomlValue* {
+        TomlValue* v = new TomlValue();
+        v.type = TOML_TABLE;
+        v.table_val = val;
+        return v;
+    }
+    
+    // Type checking
+    fn is_string(self) -> bool { return self.type == TOML_STRING; }
+    fn is_int(self) -> bool { return self.type == TOML_INT; }
+    fn is_float(self) -> bool { return self.type == TOML_FLOAT; }
+    fn is_bool(self) -> bool { return self.type == TOML_BOOL; }
+    fn is_array(self) -> bool { return self.type == TOML_ARRAY; }
+    fn is_table(self) -> bool { return self.type == TOML_TABLE; }
+    
+    // Get values
+    fn get_str(self) -> str* { return self.str_val; }
+    fn get_int(self) -> int { return self.int_val; }
+    fn get_float(self) -> float { return self.float_val; }
+    fn get_bool(self) -> bool { return self.bool_val; }
+    fn get_arr(self) -> TomlArray* { return self.arr_val; }
+    fn get_table(self) -> TomlTable* { return self.table_val; }
+}
+
+// =============================================================================
+// TomlTable Type
+// =============================================================================
+
+struct TomlTable {
+    keys: array<str*>;
+    values: array<TomlValue*>;
+    len: int;
+}
+
+impl TomlTable {
+    constructor() {
+        self.keys = [];
+        self.values = [];
+        self.len = 0;
+    }
+    
+    fn new() -> TomlTable* {
+        TomlTable* t = new TomlTable();
+        t.keys = [];
+        t.values = [];
+        t.len = 0;
+        return t;
+    }
+    
+    // Set key-value
+    fn set(self, key: str*, value: TomlValue*) -> void {
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                self.values[i] = value;
+                return;
+            }
+            i = i + 1;
+        }
+        
+        self.keys[self.len] = key;
+        self.values[self.len] = value;
+        self.len = self.len + 1;
+    }
+    
+    // Get by key (supports dotted paths)
+    fn get(self, key: str*) -> TomlValue* {
+        // Check for dotted path
+        int dot_idx = _str_find(key, 46);  // '.'
+        
+        if (dot_idx >= 0) {
+            str* first_key = _str_sub(key, 0, dot_idx);
+            str* rest_key = _str_sub(key, dot_idx + 1, _strlen(key));
+            
+            TomlValue* val = self._get_direct(first_key);
+            if (val != 0 && val.is_table()) {
+                return val.get_table().get(rest_key);
+            }
+            return 0;
+        }
+        
+        return self._get_direct(key);
+    }
+    
+    // Get direct key (no path)
+    fn _get_direct(self, key: str*) -> TomlValue* {
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                return self.values[i];
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+    
+    // Check if key exists
+    fn has(self, key: str*) -> bool {
+        return self.get(key) != 0;
+    }
+    
+    // Get length
+    fn length(self) -> int {
+        return self.len;
+    }
+}
+
+// =============================================================================
+// TomlArray Type
+// =============================================================================
+
+struct TomlArray {
+    items: array<TomlValue*>;
+    len: int;
+}
+
+impl TomlArray {
+    constructor() {
+        self.items = [];
+        self.len = 0;
+    }
+    
+    fn new() -> TomlArray* {
+        TomlArray* a = new TomlArray();
+        a.items = [];
+        a.len = 0;
+        return a;
+    }
+    
+    fn push(self, val: TomlValue*) -> void {
+        self.items[self.len] = val;
+        self.len = self.len + 1;
+    }
+    
+    fn get(self, index: int) -> TomlValue* {
+        if (index < 0 || index >= self.len) {
+            return 0;
+        }
+        return self.items[index];
+    }
+    
+    fn length(self) -> int {
+        return self.len;
+    }
+}
+
+// =============================================================================
+// TomlParser Type
+// =============================================================================
+
+struct TomlParser {
+    input: bytes*;
+    pos: int;
+    len: int;
+    root: TomlTable*;
+    current_table: TomlTable*;
+}
+
+impl TomlParser {
+    fn new(input: bytes*, len: int) -> TomlParser* {
+        TomlParser* p = new TomlParser();
+        p.input = input;
+        p.pos = 0;
+        p.len = len;
+        p.root = TomlTable.new();
+        p.current_table = p.root;
+        return p;
+    }
+    
+    // Parse TOML content
+    fn parse(self) -> TomlTable* {
+        while (self.pos < self.len) {
+            self._skip_whitespace_and_comments();
+            
+            if (self.pos >= self.len) {
+                break;
+            }
+            
+            int c = self.input[self.pos];
+            
+            if (c == 91) {  // '[' - table header
+                self._parse_table_header();
+            } else if (c != 10 && c != 35) {  // not newline or comment
+                self._parse_key_value();
+            } else {
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        return self.root;
+    }
+    
+    // Parse table header [table] or [[array.of.tables]]
+    fn _parse_table_header(self) -> void {
+        self.pos = self.pos + 1;  // Skip '['
+        
+        bool is_array_table = false;
+        if (self.input[self.pos] == 91) {  // '['
+            is_array_table = true;
+            self.pos = self.pos + 1;
+        }
+        
+        // Parse table path
+        int start = self.pos;
+        while (self.pos < self.len && self.input[self.pos] != 93) {  // ']'
+            self.pos = self.pos + 1;
+        }
+        
+        str* path = _extract_string(self.input + start, self.pos - start);
+        self.pos = self.pos + 1;  // Skip ']'
+        
+        if (is_array_table) {
+            self.pos = self.pos + 1;  // Skip second ']'
+        }
+        
+        // Navigate/create path
+        self.current_table = self._get_or_create_table(path, is_array_table);
+    }
+    
+    // Parse key = value
+    fn _parse_key_value(self) -> void {
+        // Parse key
+        int key_start = self.pos;
+        while (self.pos < self.len && self.input[self.pos] != 61) {  // '='
+            self.pos = self.pos + 1;
+        }
+        
+        str* key = _extract_string(self.input + key_start, self.pos - key_start);
+        key = _str_trim(key);
+        
+        self.pos = self.pos + 1;  // Skip '='
+        
+        // Parse value
+        TomlValue* value = self._parse_value();
+        
+        if (key != "" && value != 0) {
+            self.current_table.set(key, value);
+        }
+    }
+    
+    // Parse a value
+    fn _parse_value(self) -> TomlValue* {
+        self._skip_whitespace();
+        
+        if (self.pos >= self.len) {
+            return 0;
+        }
+        
+        int c = self.input[self.pos];
+        
+        // String
+        if (c == 34) {  // '"'
+            return self._parse_string();
+        }
+        
+        // Multi-line string
+        if (c == 39) {  // "'"
+            return self._parse_literal_string();
+        }
+        
+        // Array
+        if (c == 91) {  // '['
+            return self._parse_array();
+        }
+        
+        // Inline table
+        if (c == 123) {  // '{'
+            return self._parse_inline_table();
+        }
+        
+        // Boolean
+        if (c == 116 || c == 102) {  // 't' or 'f'
+            return self._parse_bool();
+        }
+        
+        // Number
+        return self._parse_number();
+    }
+    
+    // Parse string
+    fn _parse_string(self) -> TomlValue* {
+        self.pos = self.pos + 1;  // Skip '"'
+        
+        int start = self.pos;
+        while (self.pos < self.len && self.input[self.pos] != 34) {
+            if (self.input[self.pos] == 92) {  // escape
+                self.pos = self.pos + 1;
+            }
+            self.pos = self.pos + 1;
+        }
+        
+        str* val = _extract_string(self.input + start, self.pos - start);
+        self.pos = self.pos + 1;  // Skip '"'
+        
+        return TomlValue.string(val);
+    }
+    
+    // Parse literal string
+    fn _parse_literal_string(self) -> TomlValue* {
+        self.pos = self.pos + 1;  // Skip "'"
+        
+        int start = self.pos;
+        while (self.pos < self.len && self.input[self.pos] != 39) {
+            self.pos = self.pos + 1;
+        }
+        
+        str* val = _extract_string(self.input + start, self.pos - start);
+        self.pos = self.pos + 1;  // Skip "'"
+        
+        return TomlValue.string(val);
+    }
+    
+    // Parse boolean
+    fn _parse_bool(self) -> TomlValue* {
+        if (self.input[self.pos] == 116) {  // 't'
+            self.pos = self.pos + 4;
+            return TomlValue.bool(true);
+        } else {
+            self.pos = self.pos + 5;
+            return TomlValue.bool(false);
+        }
+    }
+    
+    // Parse number
+    fn _parse_number(self) -> TomlValue* {
+        int neg = false;
+        int val = 0;
+        
+        if (self.input[self.pos] == 45) {  // '-'
+            neg = true;
+            self.pos = self.pos + 1;
+        }
+        
+        while (self.pos < self.len) {
+            int c = self.input[self.pos];
+            if (c >= 48 && c <= 57) {
+                val = val * 10 + (c - 48);
+                self.pos = self.pos + 1;
+            } else if (c == 95) {  // '_' - ignore in numbers
+                self.pos = self.pos + 1;
+            } else {
+                break;
+            }
+        }
+        
+        return TomlValue.int(neg ? -val : val);
+    }
+    
+    // Parse array
+    fn _parse_array(self) -> TomlValue* {
+        self.pos = self.pos + 1;  // Skip '['
+        
+        TomlArray* arr = TomlArray.new();
+        
+        while (self.pos < self.len && self.input[self.pos] != 93) {  // ']'
+            self._skip_whitespace_and_comments();
+            
+            if (self.input[self.pos] == 93) {
+                break;
+            }
+            
+            TomlValue* val = self._parse_value();
+            if (val != 0) {
+                arr.push(val);
+            }
+            
+            self._skip_whitespace();
+            
+            if (self.input[self.pos] == 44) {  // ','
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        self.pos = self.pos + 1;  // Skip ']'
+        
+        return TomlValue.array(arr);
+    }
+    
+    // Parse inline table
+    fn _parse_inline_table(self) -> TomlValue* {
+        self.pos = self.pos + 1;  // Skip '{'
+        
+        TomlTable* table = TomlTable.new();
+        
+        while (self.pos < self.len && self.input[self.pos] != 125) {  // '}'
+            self._skip_whitespace();
+            
+            if (self.input[self.pos] == 125) {
+                break;
+            }
+            
+            // Parse key
+            int key_start = self.pos;
+            while (self.pos < self.len && self.input[self.pos] != 61) {
+                self.pos = self.pos + 1;
+            }
+            
+            str* key = _extract_string(self.input + key_start, self.pos - key_start);
+            key = _str_trim(key);
+            
+            self.pos = self.pos + 1;  // Skip '='
+            
+            TomlValue* val = self._parse_value();
+            if (key != "" && val != 0) {
+                table.set(key, val);
+            }
+            
+            self._skip_whitespace();
+            
+            if (self.input[self.pos] == 44) {  // ','
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        self.pos = self.pos + 1;  // Skip '}'
+        
+        return TomlValue.table(table);
+    }
+    
+    // Get or create nested table
+    fn _get_or_create_table(self, path: str*, is_array: bool) -> TomlTable* {
+        // Simplified - would navigate path
+        return self.root;
+    }
+    
+    // Skip whitespace
+    fn _skip_whitespace(self) -> void {
+        while (self.pos < self.len) {
+            int c = self.input[self.pos];
+            if (c == 32 || c == 9 || c == 13) {
+                self.pos = self.pos + 1;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // Skip whitespace and comments
+    fn _skip_whitespace_and_comments(self) -> void {
+        while (self.pos < self.len) {
+            int c = self.input[self.pos];
+            if (c == 32 || c == 9 || c == 13) {
+                self.pos = self.pos + 1;
+            } else if (c == 35) {  // '#'
+                while (self.pos < self.len && self.input[self.pos] != 10) {
+                    self.pos = self.pos + 1;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+// =============================================================================
+// TomlBuilder Type
+// =============================================================================
+
+struct TomlBuilder {
+    buffer: bytes*;
+    pos: int;
+    indent: int;
+}
+
+impl TomlBuilder {
+    constructor() {
+        self.buffer = 0;
+        self.pos = 0;
+        self.indent = 0;
+    }
+    
+    fn new() -> TomlBuilder* {
+        TomlBuilder* b = new TomlBuilder();
+        b.buffer = 0;
+        b.pos = 0;
+        b.indent = 0;
+        return b;
+    }
+    
+    // Start a table section
+    fn table(self, name: str*) -> void {
+        self._write_char(91);  // '['
+        self._write_str(name);
+        self._write_char(93);  // ']'
+        self._write_char(10);  // newline
+    }
+    
+    // Add key-value pair
+    fn kv(self, key: str*, value: TomlValue*) -> void {
+        self._write_str(key);
+        self._write_str(" = ");
+        self._write_value(value);
+        self._write_char(10);
+    }
+    
+    // Add string
+    fn string(self, key: str*, val: str*) -> void {
+        self.kv(key, TomlValue.string(val));
+    }
+    
+    // Add integer
+    fn int(self, key: str*, val: int) -> void {
+        self.kv(key, TomlValue.int(val));
+    }
+    
+    // Add boolean
+    fn bool(self, key: str*, val: bool) -> void {
+        self.kv(key, TomlValue.bool(val));
+    }
+    
+    // Get result
+    fn finish(self) -> str* {
+        return self.buffer;
+    }
+    
+    // Internal: write value
+    fn _write_value(self, val: TomlValue*) -> void {
+        if (val.type == TOML_STRING) {
+            self._write_char(34);  // '"'
+            self._write_str(val.str_val);
+            self._write_char(34);
+        } else if (val.type == TOML_INT) {
+            self._write_int(val.int_val);
+        } else if (val.type == TOML_BOOL) {
+            self._write_str(val.bool_val ? "true" : "false");
+        } else if (val.type == TOML_ARRAY) {
+            self._write_str("[");
+            // Would iterate array
+            self._write_str("]");
+        } else if (val.type == TOML_TABLE) {
+            self._write_str("{");
+            // Would iterate table
+            self._write_str("}");
+        }
+    }
+    
+    // Internal: write string
+    fn _write_str(self, s: str*) -> void {
+        int len = _strlen(s);
+        int i = 0;
+        while (i < len) {
+            self.buffer[self.pos] = s[i];
+            self.pos = self.pos + 1;
+            i = i + 1;
+        }
+    }
+    
+    // Internal: write char
+    fn _write_char(self, c: int) -> void {
+        self.buffer[self.pos] = c;
+        self.pos = self.pos + 1;
+    }
+    
+    // Internal: write integer
+    fn _write_int(self, n: int) -> void {
+        bytes buf = "                   ";
+        int i = 18;
+        int neg = n < 0;
+        
+        if (neg) {
+            n = -n;
+        }
+        
+        while (n > 0 && i >= 0) {
+            buf[i] = 48 + (n % 10);
+            n = n / 10;
+            i = i - 1;
+        }
+        
+        if (neg && i >= 0) {
+            buf[i] = 45;
+            i = i - 1;
+        }
+        
+        int j = i + 1;
+        while (j <= 18) {
+            self.buffer[self.pos] = buf[j];
+            self.pos = self.pos + 1;
+            j = j + 1;
+        }
+    }
+}
+
+// =============================================================================
+// Standalone Functions
+// =============================================================================
+
+// Parse TOML string
+fn toml_parse(input: str*) -> TomlTable* {
+    int* len_ptr = (input - 8);
+    int len = *len_ptr;
+    
+    TomlParser* parser = TomlParser.new(input, len);
+    return parser.parse();
+}
+
+// Parse TOML file
+fn toml_load(path: str*) -> TomlTable* {
+    // Would load file and parse
+    return TomlTable.new();
+}
+
+// Stringify to TOML
+fn toml_stringify(table: TomlTable*) -> str* {
+    TomlBuilder* builder = TomlBuilder.new();
+    // Would iterate table and build string
+    return builder.finish();
+}
+
+// Get value from table
+fn toml_get(table: TomlTable*, key: str*) -> TomlValue* {
+    return table.get(key);
+}
+
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
+fn _strlen(s: str*) -> int {
+    if (s == 0) {
+        return 0;
+    }
+    int* len_ptr = (s - 8);
+    return *len_ptr;
+}
+
+fn _str_eq(a: str*, b: str*) -> bool {
+    if (a == b) return true;
+    if (a == 0 || b == 0) return false;
+    
+    int len_a = _strlen(a);
+    int len_b = _strlen(b);
+    if (len_a != len_b) return false;
+    
+    int i = 0;
+    while (i < len_a) {
+        if (a[i] != b[i]) return false;
+        i = i + 1;
+    }
+    return true;
+}
+
+fn _str_find(s: str*, c: int) -> int {
+    int len = _strlen(s);
+    int i = 0;
+    while (i < len) {
+        if (s[i] == c) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn _str_sub(s: str*, start: int, end: int) -> str* {
+    // Would extract substring
+    return "";
+}
+
+fn _str_trim(s: str*) -> str* {
+    // Would trim whitespace
+    return s;
+}
+
+fn _extract_string(data: bytes*, len: int) -> str* {
+    // Would allocate and copy string
+    return "";
+}

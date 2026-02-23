@@ -1,0 +1,568 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/test/test.mv
+// description: Testing utilities module with OOP design
+//
+// This module provides testing functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - TestSuite    - Collection of tests
+// - TestRunner   - Test runner
+// - TestResult   - Result of a single test
+// - Assert       - Assertion utilities
+//
+// Functions:
+// ----------
+// - assert_eq(a, b)      - Assert equality
+// - assert_ne(a, b)      - Assert inequality
+// - assert_true(cond)    - Assert true
+// - assert_false(cond)   - Assert false
+// - assert_null(ptr)     - Assert null
+// - assert_not_null(ptr) - Assert not null
+//
+// Examples:
+// ---------
+// // Simple test
+// fn test_addition() -> void {
+//     assert_eq(2 + 2, 4, "2 + 2 should equal 4");
+// }
+//
+// // Test suite
+// TestSuite* suite = TestSuite.new("math tests");
+// suite.add_test("test_addition", test_addition);
+// suite.run();
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_WRITE = 1;
+int SYS_EXIT = 60;
+
+// File descriptors
+int STDOUT = 1;
+int STDERR = 2;
+
+// ANSI colors
+int ANSI_RESET = 0;
+int ANSI_GREEN = 32;
+int ANSI_RED = 31;
+int ANSI_YELLOW = 33;
+int ANSI_CYAN = 36;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Test Result Type
+// =============================================================================
+
+struct TestResult {
+    name: str*;
+    passed: bool;
+    message: str*;
+    duration_ns: int;
+}
+
+impl TestResult {
+    fn new(name: str*) -> TestResult* {
+        TestResult* r = new TestResult();
+        r.name = name;
+        r.passed = true;
+        r.message = "";
+        r.duration_ns = 0;
+        return r;
+    }
+    
+    fn fail(self, message: str*) -> void {
+        self.passed = false;
+        self.message = message;
+    }
+    
+    fn pass(self) -> void {
+        self.passed = true;
+        self.message = "";
+    }
+    
+    fn set_duration(self, ns: int) -> void {
+        self.duration_ns = ns;
+    }
+}
+
+// =============================================================================
+// Test Suite Type
+// =============================================================================
+
+// Test function type (function pointer)
+typedef void (*TestFn)();
+
+struct TestSuite {
+    name: str*;
+    tests: array<TestResult*>;
+    test_names: array<str*>;
+    test_funcs: array<TestFn>;
+    count: int;
+    passed: int;
+    failed: int;
+    verbose: bool;
+}
+
+impl TestSuite {
+    constructor() {
+        self.name = "";
+        self.tests = [];
+        self.test_names = [];
+        self.test_funcs = [];
+        self.count = 0;
+        self.passed = 0;
+        self.failed = 0;
+        self.verbose = false;
+    }
+    
+    fn new(name: str*) -> TestSuite* {
+        TestSuite* suite = new TestSuite();
+        suite.name = name;
+        suite.tests = [];
+        suite.test_names = [];
+        suite.test_funcs = [];
+        suite.count = 0;
+        suite.passed = 0;
+        suite.failed = 0;
+        suite.verbose = false;
+        return suite;
+    }
+    
+    // Add a test (simplified - would need function pointers)
+    fn add_test(self, name: str*) -> void {
+        // Would store test function pointer
+        // For now just track names
+        self.count = self.count + 1;
+    }
+    
+    // Set verbose mode
+    fn set_verbose(self, verbose: bool) -> void {
+        self.verbose = verbose;
+    }
+    
+    // Run all tests
+    fn run(self) -> int {
+        self._print_header();
+        
+        // Would iterate and run tests
+        // For now just return pass/fail count
+        
+        self._print_summary();
+        return self.failed;
+    }
+    
+    // Print test suite header
+    fn _print_header(self) -> void {
+        self._write_str("Running test suite: ");
+        self._write_str(self.name);
+        self._write_str("\n");
+    }
+    
+    // Print test summary
+    fn _print_summary(self) -> void {
+        self._write_str("\n");
+        self._write_str("Test Results:\n");
+        self._write_str("  Passed: ");
+        self._write_int(self.passed);
+        self._write_str("\n");
+        self._write_str("  Failed: ");
+        self._write_int(self.failed);
+        self._write_str("\n");
+        self._write_str("  Total:  ");
+        self._write_int(self.count);
+        self._write_str("\n");
+    }
+    
+    // Write string to stdout
+    fn _write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        int ret;
+        syscall SYS_WRITE, STDOUT, s, len, ret;
+    }
+    
+    // Write integer to stdout (simplified)
+    fn _write_int(self, n: int) -> void {
+        bytes buf = "          ";
+        int i = 9;
+        int neg = n < 0;
+        
+        if (neg) {
+            n = -n;
+        }
+        
+        while (n > 0 && i >= 0) {
+            buf[i] = 48 + (n % 10);
+            n = n / 10;
+            i = i - 1;
+        }
+        
+        if (neg && i >= 0) {
+            buf[i] = 45;
+            i = i - 1;
+        }
+        
+        int ret;
+        syscall SYS_WRITE, STDOUT, buf + i + 1, 9 - i, ret;
+    }
+    
+    // Record a test result
+    fn record_result(self, result: TestResult*) -> void {
+        if (result.passed) {
+            self.passed = self.passed + 1;
+            self._print_pass(result.name);
+        } else {
+            self.failed = self.failed + 1;
+            self._print_fail(result.name, result.message);
+        }
+    }
+    
+    // Print pass message
+    fn _print_pass(self, name: str*) -> void {
+        self._write_color(ANSI_GREEN);
+        self._write_str("  ✓ ");
+        self._write_reset();
+        self._write_str(name);
+        self._write_str("\n");
+    }
+    
+    // Print fail message
+    fn _print_fail(self, name: str*, message: str*) -> void {
+        self._write_color(ANSI_RED);
+        self._write_str("  ✗ ");
+        self._write_reset();
+        self._write_str(name);
+        self._write_str("\n");
+        self._write_str("    Error: ");
+        self._write_str(message);
+        self._write_str("\n");
+    }
+    
+    // Write ANSI color
+    fn _write_color(self, color: int) -> void {
+        bytes buf = "\x1b[00m";
+        buf[2] = 48 + (color / 10) % 10;
+        buf[3] = 48 + color % 10;
+        int ret;
+        syscall SYS_WRITE, STDOUT, buf, 5, ret;
+    }
+    
+    // Write ANSI reset
+    fn _write_reset(self) -> void {
+        bytes buf = "\x1b[0m";
+        int ret;
+        syscall SYS_WRITE, STDOUT, buf, 4, ret;
+    }
+}
+
+// =============================================================================
+// Assertion Functions
+// =============================================================================
+
+// Assert true
+fn assert_true(condition: bool, message: str*) -> void {
+    if (!condition) {
+        _assert_fail("assert_true", "expected true", message);
+    }
+}
+
+// Assert false
+fn assert_false(condition: bool, message: str*) -> void {
+    if (condition) {
+        _assert_fail("assert_false", "expected false", message);
+    }
+}
+
+// Assert equality (integers)
+fn assert_eq_int(expected: int, actual: int, message: str*) -> void {
+    if (expected != actual) {
+        _assert_fail("assert_eq", "values not equal", message);
+    }
+}
+
+// Assert inequality (integers)
+fn assert_ne_int(expected: int, actual: int, message: str*) -> void {
+    if (expected == actual) {
+        _assert_fail("assert_ne", "values are equal", message);
+    }
+}
+
+// Assert null pointer
+fn assert_null(ptr: void*, message: str*) -> void {
+    if (ptr != 0) {
+        _assert_fail("assert_null", "pointer is not null", message);
+    }
+}
+
+// Assert not null pointer
+fn assert_not_null(ptr: void*, message: str*) -> void {
+    if (ptr == 0) {
+        _assert_fail("assert_not_null", "pointer is null", message);
+    }
+}
+
+// Assert greater than
+fn assert_gt(a: int, b: int, message: str*) -> void {
+    if (a <= b) {
+        _assert_fail("assert_gt", "a <= b", message);
+    }
+}
+
+// Assert less than
+fn assert_lt(a: int, b: int, message: str*) -> void {
+    if (a >= b) {
+        _assert_fail("assert_lt", "a >= b", message);
+    }
+}
+
+// Assert greater than or equal
+fn assert_gte(a: int, b: int, message: str*) -> void {
+    if (a < b) {
+        _assert_fail("assert_gte", "a < b", message);
+    }
+}
+
+// Assert less than or equal
+fn assert_lte(a: int, b: int, message: str*) -> void {
+    if (a > b) {
+        _assert_fail("assert_lte", "a > b", message);
+    }
+}
+
+// Assert string equality
+fn assert_eq_str(expected: str*, actual: str*, message: str*) -> void {
+    if (!_str_eq(expected, actual)) {
+        _assert_fail("assert_eq_str", "strings not equal", message);
+    }
+}
+
+// Assert string contains
+fn assert_contains(haystack: str*, needle: str*, message: str*) -> void {
+    if (!_str_contains(haystack, needle)) {
+        _assert_fail("assert_contains", "string not found", message);
+    }
+}
+
+// Assert string starts with
+fn assert_starts_with(s: str*, prefix: str*, message: str*) -> void {
+    if (!_str_starts_with(s, prefix)) {
+        _assert_fail("assert_starts_with", "prefix not found", message);
+    }
+}
+
+// Assert string ends with
+fn assert_ends_with(s: str*, suffix: str*, message: str*) -> void {
+    if (!_str_ends_with(s, suffix)) {
+        _assert_fail("assert_ends_with", "suffix not found", message);
+    }
+}
+
+// Assert array length
+fn assert_len(arr: void*, expected: int, message: str*) -> void {
+    int* len_ptr = (arr - 8);
+    int actual = *len_ptr;
+    if (actual != expected) {
+        _assert_fail("assert_len", "length mismatch", message);
+    }
+}
+
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
+// Fail assertion
+fn _assert_fail(assertion: str*, reason: str*, message: str*) -> void {
+    // Write failure message
+    bytes buf = "\x1b[31mAssertion failed\x1b[0m: ";
+    int ret;
+    syscall SYS_WRITE, STDERR, buf, 28, ret;
+    
+    // Write assertion name
+    syscall SYS_WRITE, STDERR, assertion, _strlen(assertion), ret;
+    
+    // Write reason
+    syscall SYS_WRITE, STDERR, " - ", 3, ret;
+    syscall SYS_WRITE, STDERR, reason, _strlen(reason), ret;
+    
+    // Write custom message
+    if (message != "" && message != 0) {
+        syscall SYS_WRITE, STDERR, " - ", 3, ret;
+        syscall SYS_WRITE, STDERR, message, _strlen(message), ret;
+    }
+    
+    syscall SYS_WRITE, STDERR, "\n", 1, ret;
+    
+    // Exit with failure
+    syscall SYS_EXIT, 1, ERRNO;
+}
+
+// String length
+fn _strlen(s: str*) -> int {
+    if (s == 0) {
+        return 0;
+    }
+    int* len_ptr = (s - 8);
+    return *len_ptr;
+}
+
+// String equality
+fn _str_eq(a: str*, b: str*) -> bool {
+    if (a == b) {
+        return true;
+    }
+    if (a == 0 || b == 0) {
+        return false;
+    }
+    
+    int len_a = _strlen(a);
+    int len_b = _strlen(b);
+    
+    if (len_a != len_b) {
+        return false;
+    }
+    
+    int i = 0;
+    while (i < len_a) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+// String contains
+fn _str_contains(haystack: str*, needle: str*) -> bool {
+    int h_len = _strlen(haystack);
+    int n_len = _strlen(needle);
+    
+    if (n_len > h_len) {
+        return false;
+    }
+    
+    int i = 0;
+    while (i <= h_len - n_len) {
+        int j = 0;
+        bool found = true;
+        while (j < n_len) {
+            if (haystack[i + j] != needle[j]) {
+                found = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if (found) {
+            return true;
+        }
+        i = i + 1;
+    }
+    
+    return false;
+}
+
+// String starts with
+fn _str_starts_with(s: str*, prefix: str*) -> bool {
+    int s_len = _strlen(s);
+    int p_len = _strlen(prefix);
+    
+    if (p_len > s_len) {
+        return false;
+    }
+    
+    int i = 0;
+    while (i < p_len) {
+        if (s[i] != prefix[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+// String ends with
+fn _str_ends_with(s: str*, suffix: str*) -> bool {
+    int s_len = _strlen(s);
+    int suf_len = _strlen(suffix);
+    
+    if (suf_len > s_len) {
+        return false;
+    }
+    
+    int i = 0;
+    while (i < suf_len) {
+        if (s[s_len - suf_len + i] != suffix[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}
+
+// =============================================================================
+// Benchmark Helpers
+// =============================================================================
+
+struct Benchmark {
+    name: str*;
+    iterations: int;
+    total_ns: int;
+}
+
+impl Benchmark {
+    fn new(name: str*, iterations: int) -> Benchmark* {
+        Benchmark* b = new Benchmark();
+        b.name = name;
+        b.iterations = iterations;
+        b.total_ns = 0;
+        return b;
+    }
+    
+    fn avg_ns(self) -> int {
+        return self.total_ns / self.iterations;
+    }
+    
+    fn print_result(self) -> void {
+        // Would print benchmark results
+    }
+}
+
+// =============================================================================
+// Test Macros (for future macro support)
+// =============================================================================
+
+// These would be implemented as macros when macro support is complete
+// macro test($name) { fn test_$name() -> void }
+// macro bench($name, $iters) { fn bench_$name() -> void }
+// macro assert_eq($a, $b) { assert_eq_int($a, $b, ""); }

@@ -1,0 +1,414 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/os/os.mv
+// description: OS utilities module with OOP design
+//
+// This module provides OS detection and utilities using impl blocks.
+// All functions are implemented in pure ManV using syscalls.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_WRITE = 1;
+int SYS_OPEN = 2;
+int SYS_CLOSE = 3;
+int SYS_READ = 0;
+int SYS_UNAME = 63;
+int SYS_GETCWD = 79;
+int SYS_CHDIR = 80;
+int SYS_EXECVE = 59;
+int SYS_FORK = 57;
+int SYS_WAIT4 = 61;
+int SYS_PIPE = 22;
+int SYS_DUP2 = 33;
+int SYS_SYSINFO = 99;
+
+// OS types
+int OS_LINUX = 1;
+int OS_WINDOWS = 2;
+int OS_MACOS = 3;
+int OS_BSD = 4;
+
+// File permissions
+int PERM_READ = 4;
+int PERM_WRITE = 2;
+int PERM_EXEC = 1;
+
+// File descriptors
+int STDIN = 0;
+int STDOUT = 1;
+int STDERR = 2;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// OS Type - OS detection and utilities
+// =============================================================================
+
+struct OS {
+    // Static methods only
+}
+
+impl OS {
+    // =========================================================================
+    // OS Detection
+    // =========================================================================
+    
+    // Get OS type (always Linux for now)
+    fn type() -> int {
+        return OS_LINUX;
+    }
+    
+    // Get OS name
+    fn name() -> str* {
+        return "Linux";
+    }
+    
+    // Get OS version
+    fn version() -> str* {
+        // Read from /proc/version
+        return "";
+    }
+    
+    // Get kernel version
+    fn kernel_version() -> str* {
+        // Use uname syscall
+        bytes buf[65];  // struct utsname
+        syscall SYS_UNAME, buf, ERRNO;
+        
+        // Release is at offset 65
+        str* release = buf + 65;
+        return release;
+    }
+    
+    // Get architecture
+    fn arch() -> str* {
+        bytes buf[65];  // struct utsname
+        syscall SYS_UNAME, buf, ERRNO;
+        
+        // Machine is at offset 195 (65 * 3)
+        str* machine = buf + 195;
+        return machine;
+    }
+    
+    // Check if Linux
+    fn is_linux() -> bool {
+        return true;
+    }
+    
+    // Check if Windows
+    fn is_windows() -> bool {
+        return false;
+    }
+    
+    // Check if macOS
+    fn is_macos() -> bool {
+        return false;
+    }
+    
+    // =========================================================================
+    // Standard Directories
+    // =========================================================================
+    
+    // Get home directory
+    fn home_dir() -> str* {
+        // Get from HOME environment variable
+        return "";
+    }
+    
+    // Get temp directory
+    fn temp_dir() -> str* {
+        return "/tmp";
+    }
+    
+    // Get executable path
+    fn exe_path() -> str* {
+        // Read /proc/self/exe symlink
+        return "";
+    }
+    
+    // Get executable directory
+    fn exe_dir() -> str* {
+        return "";
+    }
+    
+    // Get config directory
+    fn config_dir() -> str* {
+        return "";
+    }
+    
+    // Get data directory
+    fn data_dir() -> str* {
+        return "";
+    }
+    
+    // Get cache directory
+    fn cache_dir() -> str* {
+        return "";
+    }
+    
+    // =========================================================================
+    // Process Execution
+    // =========================================================================
+    
+    // Execute command and get output
+    fn exec(cmd: str*) -> str* {
+        return "";
+    }
+    
+    // Execute command with arguments
+    fn exec_args(cmd: str*, args: void*) -> str* {
+        return "";
+    }
+    
+    // Execute command and get exit code
+    fn exec_code(cmd: str*) -> int {
+        return 0;
+    }
+    
+    // =========================================================================
+    // System Resources
+    // =========================================================================
+    
+    // Get total memory
+    fn total_memory() -> int {
+        bytes info[256];
+        syscall SYS_SYSINFO, info, ERRNO;
+        
+        int* totalram = info + 16;
+        return *totalram;
+    }
+    
+    // Get free memory
+    fn free_memory() -> int {
+        bytes info[256];
+        syscall SYS_SYSINFO, info, ERRNO;
+        
+        int* freeram = info + 24;
+        return *freeram;
+    }
+    
+    // Get CPU count
+    fn cpu_count() -> int {
+        bytes info[256];
+        syscall SYS_SYSINFO, info, ERRNO;
+        
+        int* procs = info + 40;
+        return *procs;
+    }
+    
+    // Get load average
+    fn load_avg() -> float {
+        return 0.0;
+    }
+    
+    // =========================================================================
+    // Terminal
+    // =========================================================================
+    
+    // Get terminal width
+    fn term_width() -> int {
+        return 80;
+    }
+    
+    // Get terminal height
+    fn term_height() -> int {
+        return 24;
+    }
+    
+    // Check if stdout is a terminal
+    fn is_terminal() -> bool {
+        return false;
+    }
+    
+    // Clear screen
+    fn clear_screen() -> void {
+        syscall SYS_WRITE, STDOUT, "\x1b[2J\x1b[H", 7, ERRNO;
+    }
+}
+
+// =============================================================================
+// Process Type
+// =============================================================================
+
+struct Process {
+    pid: int;
+    stdin_fd: int;
+    stdout_fd: int;
+    stderr_fd: int;
+    running: bool;
+}
+
+impl Process {
+    constructor() {
+        self.pid = 0;
+        self.stdin_fd = -1;
+        self.stdout_fd = -1;
+        self.stderr_fd = -1;
+        self.running = false;
+    }
+    
+    // Spawn a new process
+    fn spawn(cmd: str*, args: void*) -> Process* {
+        Process* p = new Process();
+        
+        // Create pipes for stdin/stdout/stderr
+        int stdin_pipe[2];
+        int stdout_pipe[2];
+        int stderr_pipe[2];
+        
+        syscall SYS_PIPE, stdin_pipe, ERRNO;
+        syscall SYS_PIPE, stdout_pipe, ERRNO;
+        syscall SYS_PIPE, stderr_pipe, ERRNO;
+        
+        int pid;
+        syscall SYS_FORK, pid, ERRNO;
+        
+        if (pid == 0) {
+            // Child process
+            // Redirect stdin/stdout/stderr
+            syscall SYS_DUP2, stdin_pipe[0], STDIN, ERRNO;
+            syscall SYS_DUP2, stdout_pipe[1], STDOUT, ERRNO;
+            syscall SYS_DUP2, stderr_pipe[1], STDERR, ERRNO;
+            
+            // Close pipe ends
+            // Execute command
+            syscall SYS_EXECVE, cmd, args, 0, ERRNO;
+        } else {
+            // Parent process
+            p.pid = pid;
+            p.stdin_fd = stdin_pipe[1];
+            p.stdout_fd = stdout_pipe[0];
+            p.stderr_fd = stderr_pipe[0];
+            p.running = true;
+        }
+        
+        return p;
+    }
+    
+    // Wait for process to complete
+    fn wait(self) -> int {
+        if (!self.running) {
+            return -1;
+        }
+        
+        int status;
+        syscall SYS_WAIT4, self.pid, &status, 0, 0, ERRNO;
+        self.running = false;
+        return status;
+    }
+    
+    // Kill the process
+    fn kill(self) -> int {
+        if (!self.running) {
+            return -1;
+        }
+        
+        int result;
+        // SYS_KILL = 62
+        syscall 62, self.pid, 9, result, ERRNO;  // SIGKILL
+        self.running = false;
+        return result;
+    }
+    
+    // Read from process stdout
+    fn read(self, buffer: void*, size: int) -> int {
+        int bytes_read;
+        syscall SYS_READ, self.stdout_fd, buffer, size, bytes_read, ERRNO;
+        return bytes_read;
+    }
+    
+    // Write to process stdin
+    fn write(self, data: void*, size: int) -> int {
+        int bytes_written;
+        syscall SYS_WRITE, self.stdin_fd, data, size, bytes_written, ERRNO;
+        return bytes_written;
+    }
+    
+    // Close process handles
+    fn close(self) -> void {
+        if (self.stdin_fd >= 0) {
+            syscall SYS_CLOSE, self.stdin_fd, ERRNO;
+        }
+        if (self.stdout_fd >= 0) {
+            syscall SYS_CLOSE, self.stdout_fd, ERRNO;
+        }
+        if (self.stderr_fd >= 0) {
+            syscall SYS_CLOSE, self.stderr_fd, ERRNO;
+        }
+    }
+    
+    // Check if process is running
+    fn is_running(self) -> bool {
+        return self.running;
+    }
+    
+    // Get PID
+    fn get_pid(self) -> int {
+        return self.pid;
+    }
+}
+
+// =============================================================================
+// DiskInfo Type
+// =============================================================================
+
+struct DiskInfo {
+    total: int;
+    free: int;
+    used: int;
+    used_percent: float;
+}
+
+impl DiskInfo {
+    constructor() {
+        self.total = 0;
+        self.free = 0;
+        self.used = 0;
+        self.used_percent = 0.0;
+    }
+    
+    // Get disk info for path
+    fn for_path(path: str*) -> DiskInfo* {
+        DiskInfo* info = new DiskInfo();
+        // Would use statfs syscall
+        return info;
+    }
+    
+    fn total_gb(self) -> float {
+        return self.total / 1073741824.0;
+    }
+    
+    fn free_gb(self) -> float {
+        return self.free / 1073741824.0;
+    }
+    
+    fn used_gb(self) -> float {
+        return self.used / 1073741824.0;
+    }
+}

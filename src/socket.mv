@@ -1,0 +1,578 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/socket/socket.mv
+// description: Socket networking module with OOP design
+//
+// This module provides networking operations using impl blocks.
+// All functions are implemented in pure ManV using syscalls.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_SOCKET = 41;
+int SYS_CONNECT = 42;
+int SYS_ACCEPT = 43;
+int SYS_SENDTO = 44;
+int SYS_RECVFROM = 45;
+int SYS_SHUTDOWN = 48;
+int SYS_BIND = 49;
+int SYS_LISTEN = 50;
+int SYS_GETSOCKNAME = 51;
+int SYS_GETPEERNAME = 52;
+int SYS_SETSOCKOPT = 54;
+int SYS_GETSOCKOPT = 55;
+int SYS_READ = 0;
+int SYS_WRITE = 1;
+int SYS_CLOSE = 3;
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Address families
+int AF_INET = 2;
+int AF_INET6 = 10;
+int AF_UNIX = 1;
+
+// Socket types
+int SOCK_STREAM = 1;   // TCP
+int SOCK_DGRAM = 2;    // UDP
+int SOCK_RAW = 3;
+
+// Protocols
+int IPPROTO_TCP = 6;
+int IPPROTO_UDP = 17;
+
+// Socket options levels
+int SOL_SOCKET = 1;
+int IPPROTO_IP = 0;
+
+// Socket options
+int SO_REUSEADDR = 2;
+int SO_KEEPALIVE = 9;
+int SO_BROADCAST = 6;
+int SO_SNDBUF = 7;
+int SO_RCVBUF = 8;
+int SO_RCVTIMEO = 20;
+int SO_SNDTIMEO = 21;
+
+// Shutdown how
+int SHUT_RD = 0;
+int SHUT_WR = 1;
+int SHUT_RDWR = 2;
+
+// Poll events
+int POLLIN = 1;
+int POLLOUT = 4;
+int POLLERR = 8;
+int POLLHUP = 16;
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// SockAddrIn Type - IPv4 socket address
+// =============================================================================
+
+struct SockAddrIn {
+    family: int;
+    port: int;
+    addr: int;
+    padding: bytes<8>;
+}
+
+impl SockAddrIn {
+    constructor() {
+        self.family = AF_INET;
+        self.port = 0;
+        self.addr = 0;
+        self.padding = [0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    
+    // Create address from IP and port
+    fn from(ip: str*, port: int) -> SockAddrIn* {
+        SockAddrIn* addr = new SockAddrIn();
+        addr.family = AF_INET;
+        addr.port = (port >> 8) | ((port & 0xFF) << 8);  // htons
+        addr.addr = SockAddrIn._parse_ip(ip);
+        return addr;
+    }
+    
+    // Parse IP string to integer
+    fn _parse_ip(ip: str*) -> int {
+        int* len_ptr = (ip - 8);
+        int len = *len_ptr;
+        
+        int result = 0;
+        int octet = 0;
+        int shift = 24;
+        int i = 0;
+        
+        while (i < len && shift >= 0) {
+            int c = ip[i];
+            
+            if (c == 46) {  // '.'
+                result = result | (octet << shift);
+                octet = 0;
+                shift = shift - 8;
+            } else if (c >= 48 && c <= 57) {
+                octet = octet * 10 + (c - 48);
+            }
+            
+            i = i + 1;
+        }
+        
+        if (shift >= 0) {
+            result = result | octet;
+        }
+        
+        return result;
+    }
+    
+    // Format IP address to string
+    fn format_ip(self) -> str* {
+        // Allocate buffer for "xxx.xxx.xxx.xxx"
+        int alloc_size = 8 + 16;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return "";
+        }
+        
+        str* buffer = mapped + 8;
+        int pos = 0;
+        
+        // Extract octets (network byte order)
+        int addr = self.addr;
+        int i = 0;
+        while (i < 4) {
+            int octet = (addr >> (24 - i * 8)) & 0xFF;
+            
+            // Convert octet to string
+            if (octet >= 100) {
+                buffer[pos] = 48 + octet / 100;
+                octet = octet % 100;
+                pos = pos + 1;
+            }
+            if (octet >= 10 || pos > 0) {
+                buffer[pos] = 48 + octet / 10;
+                octet = octet % 10;
+                pos = pos + 1;
+            }
+            buffer[pos] = 48 + octet;
+            pos = pos + 1;
+            
+            if (i < 3) {
+                buffer[pos] = 46;  // '.'
+                pos = pos + 1;
+            }
+            
+            i = i + 1;
+        }
+        
+        buffer[pos] = 0;
+        
+        int* len_header = mapped;
+        *len_header = pos;
+        
+        return buffer;
+    }
+    
+    // Get port (convert from network byte order)
+    fn get_port(self) -> int {
+        return ((self.port & 0xFF) << 8) | ((self.port >> 8) & 0xFF);
+    }
+}
+
+// =============================================================================
+// Socket Type
+// =============================================================================
+
+struct Socket {
+    fd: int;
+    family: int;
+    sock_type: int;
+    protocol: int;
+    is_connected: bool;
+    is_listening: bool;
+    error: int;
+}
+
+impl Socket {
+    constructor() {
+        self.fd = -1;
+        self.family = AF_INET;
+        self.sock_type = SOCK_STREAM;
+        self.protocol = 0;
+        self.is_connected = false;
+        self.is_listening = false;
+        self.error = 0;
+    }
+    
+    // Create new socket
+    fn new(family: int, sock_type: int, protocol: int) -> Socket* {
+        Socket* s = new Socket();
+        
+        int fd;
+        syscall SYS_SOCKET, family, sock_type, protocol, fd, ERRNO;
+        
+        if (fd < 0) {
+            s.error = ERRNO;
+            return s;
+        }
+        
+        s.fd = fd;
+        s.family = family;
+        s.sock_type = sock_type;
+        s.protocol = protocol;
+        
+        return s;
+    }
+    
+    // Create TCP socket
+    fn tcp() -> Socket* {
+        return Socket.new(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    }
+    
+    // Create UDP socket
+    fn udp() -> Socket* {
+        return Socket.new(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    }
+    
+    // Connect to server
+    fn connect(self, addr: SockAddrIn*) -> int {
+        if (self.fd < 0) {
+            return -1;
+        }
+        
+        int result;
+        syscall SYS_CONNECT, self.fd, addr, 16, result, ERRNO;
+        
+        if (result == 0) {
+            self.is_connected = true;
+        }
+        
+        return result;
+    }
+    
+    // Connect to host
+    fn connect_host(self, host: str*, port: int) -> int {
+        SockAddrIn* addr = SockAddrIn.from(host, port);
+        return self.connect(addr);
+    }
+    
+    // Bind to address
+    fn bind(self, addr: SockAddrIn*) -> int {
+        if (self.fd < 0) {
+            return -1;
+        }
+        
+        int result;
+        syscall SYS_BIND, self.fd, addr, 16, result, ERRNO;
+        
+        return result;
+    }
+    
+    // Listen for connections
+    fn listen(self, backlog: int) -> int {
+        if (self.fd < 0) {
+            return -1;
+        }
+        
+        int result;
+        syscall SYS_LISTEN, self.fd, backlog, result, ERRNO;
+        
+        if (result == 0) {
+            self.is_listening = true;
+        }
+        
+        return result;
+    }
+    
+    // Accept connection
+    fn accept(self) -> Socket* {
+        if (!self.is_listening) {
+            return 0;
+        }
+        
+        SockAddrIn addr;
+        int addr_len = 16;
+        
+        int client_fd;
+        syscall SYS_ACCEPT, self.fd, &addr, &addr_len, client_fd, ERRNO;
+        
+        if (client_fd < 0) {
+            return 0;
+        }
+        
+        Socket* client = new Socket();
+        client.fd = client_fd;
+        client.family = self.family;
+        client.sock_type = self.sock_type;
+        client.is_connected = true;
+        
+        return client;
+    }
+    
+    // Send data
+    fn send(self, data: void*, size: int) -> int {
+        if (!self.is_connected) {
+            return -1;
+        }
+        
+        int sent;
+        syscall SYS_SENDTO, self.fd, data, size, 0, 0, 0, sent, ERRNO;
+        
+        return sent;
+    }
+    
+    // Send string
+    fn send_str(self, s: str*) -> int {
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        return self.send(s, len);
+    }
+    
+    // Receive data
+    fn recv(self, buffer: void*, size: int) -> int {
+        if (!self.is_connected) {
+            return -1;
+        }
+        
+        int received;
+        syscall SYS_RECVFROM, self.fd, buffer, size, 0, 0, 0, received, ERRNO;
+        
+        return received;
+    }
+    
+    // Receive string
+    fn recv_str(self, max_size: int) -> str* {
+        int alloc_size = 8 + max_size + 1;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return "";
+        }
+        
+        str* buffer = mapped + 8;
+        int received = self.recv(buffer, max_size);
+        
+        if (received <= 0) {
+            syscall SYS_MUNMAP, mapped, alloc_size, ERRNO;
+            return "";
+        }
+        
+        buffer[received] = 0;
+        
+        int* len_header = mapped;
+        *len_header = received;
+        
+        return buffer;
+    }
+    
+    // Close socket
+    fn close(self) -> void {
+        if (self.fd >= 0) {
+            syscall SYS_CLOSE, self.fd, ERRNO;
+            self.fd = -1;
+            self.is_connected = false;
+            self.is_listening = false;
+        }
+    }
+    
+    // Shutdown
+    fn shutdown(self, how: int) -> int {
+        if (self.fd < 0) {
+            return -1;
+        }
+        
+        int result;
+        syscall SYS_SHUTDOWN, self.fd, how, result, ERRNO;
+        
+        return result;
+    }
+    
+    // Set socket option
+    fn set_option(self, level: int, optname: int, value: int) -> int {
+        if (self.fd < 0) {
+            return -1;
+        }
+        
+        int result;
+        syscall SYS_SETSOCKOPT, self.fd, level, optname, &value, 4, result, ERRNO;
+        
+        return result;
+    }
+    
+    // Set reuse address
+    fn set_reuse_addr(self, enable: bool) -> int {
+        return self.set_option(SOL_SOCKET, SO_REUSEADDR, enable ? 1 : 0);
+    }
+    
+    // Set receive timeout
+    fn set_recv_timeout(self, ms: int) -> int {
+        // Timeout is struct timeval { seconds, microseconds }
+        bytes timeout[8];
+        int* sec = timeout;
+        int* usec = timeout + 4;
+        *sec = ms / 1000;
+        *usec = (ms % 1000) * 1000;
+        
+        int result;
+        syscall SYS_SETSOCKOPT, self.fd, SOL_SOCKET, SO_RCVTIMEO, timeout, 8, result, ERRNO;
+        
+        return result;
+    }
+    
+    // Check if connected
+    fn is_connected(self) -> bool {
+        return self.is_connected;
+    }
+}
+
+// =============================================================================
+// TCP Helper Functions
+// =============================================================================
+
+// Create TCP client and connect
+fn tcp_connect(host: str*, port: int) -> Socket* {
+    Socket* s = Socket.tcp();
+    if (s.fd < 0) {
+        return s;
+    }
+    
+    int result = s.connect_host(host, port);
+    if (result < 0) {
+        s.close();
+        return 0;
+    }
+    
+    return s;
+}
+
+// Create TCP server
+fn tcp_server(port: int) -> Socket* {
+    Socket* s = Socket.tcp();
+    if (s.fd < 0) {
+        return s;
+    }
+    
+    s.set_reuse_addr(true);
+    
+    SockAddrIn* addr = new SockAddrIn();
+    addr.family = AF_INET;
+    addr.port = (port >> 8) | ((port & 0xFF) << 8);
+    addr.addr = 0;  // INADDR_ANY
+    
+    int result = s.bind(addr);
+    if (result < 0) {
+        s.close();
+        return 0;
+    }
+    
+    result = s.listen(128);
+    if (result < 0) {
+        s.close();
+        return 0;
+    }
+    
+    return s;
+}
+
+// =============================================================================
+// UDP Helper Functions
+// =============================================================================
+
+// Create UDP socket
+fn udp_socket() -> Socket* {
+    return Socket.udp();
+}
+
+// Bind UDP socket to port
+fn udp_bind(port: int) -> Socket* {
+    Socket* s = Socket.udp();
+    if (s.fd < 0) {
+        return s;
+    }
+    
+    SockAddrIn* addr = new SockAddrIn();
+    addr.family = AF_INET;
+    addr.port = (port >> 8) | ((port & 0xFF) << 8);
+    addr.addr = 0;
+    
+    int result = s.bind(addr);
+    if (result < 0) {
+        s.close();
+        return 0;
+    }
+    
+    return s;
+}
+
+// =============================================================================
+// PollFd Type
+// =============================================================================
+
+struct PollFd {
+    fd: int;
+    events: int;
+    revents: int;
+}
+
+impl PollFd {
+    constructor(fd: int, events: int) {
+        self.fd = fd;
+        self.events = events;
+        self.revents = 0;
+    }
+    
+    // Check if readable
+    fn can_read(self) -> bool {
+        return (self.revents & POLLIN) != 0;
+    }
+    
+    // Check if writable
+    fn can_write(self) -> bool {
+        return (self.revents & POLLOUT) != 0;
+    }
+    
+    // Check if error
+    fn has_error(self) -> bool {
+        return (self.revents & POLLERR) != 0;
+    }
+    
+    // Check if hangup
+    fn has_hangup(self) -> bool {
+        return (self.revents & POLLHUP) != 0;
+    }
+}

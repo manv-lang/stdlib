@@ -1,0 +1,24 @@
+[project]
+name = "stdlib"
+version = "0.1.0"
+description = "The standard library for the ManV programming language"
+authors = [
+    "r0d",
+]
+license = "MIT"
+readme = "README.md"
+edition = "2026"
+entry = "src/mod.mv"
+type = "module"
+
+[build]
+opt = "debug"
+target = "x86_64-linux-gnu"
+out_dir = "build"
+emit = "bin"
+
+
+[toolchain]
+stdlib = "/usr/lib/manv/stdlib"
+packages = "./.manv/packages"
+cache = "./.manv/cache"

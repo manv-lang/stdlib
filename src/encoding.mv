@@ -1,0 +1,613 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/encoding/encoding.mv
+// description: Encoding utilities module with OOP design
+//
+// This module provides encoding/decoding functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - Base64Encoder  - Base64 encoding
+// - Base64Decoder  - Base64 decoding
+// - HexEncoder     - Hexadecimal encoding
+// - HexDecoder     - Hexadecimal decoding
+// - UrlEncoder     - URL encoding
+// - UrlDecoder     - URL decoding
+//
+// Functions:
+// ----------
+// - base64_encode(data, len)    - Encode bytes to base64 string
+// - base64_decode(s)            - Decode base64 string to bytes
+// - hex_encode(data, len)       - Encode bytes to hex string
+// - hex_decode(s)               - Decode hex string to bytes
+// - url_encode(s)               - URL encode a string
+// - url_decode(s)               - URL decode a string
+//
+// Examples:
+// ---------
+// // Base64 encoding
+// str* encoded = base64_encode("hello", 5);  // "aGVsbG8="
+//
+// // Hex encoding
+// str* hex = hex_encode("\x00\xff", 2);      // "00ff"
+//
+// // URL encoding
+// str* url = url_encode("hello world");      // "hello%20world"
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// Base64 alphabet
+bytes BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+// Base64 URL-safe alphabet
+bytes BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+// Hex characters
+bytes HEX_CHARS = "0123456789abcdef";
+bytes HEX_CHARS_UPPER = "0123456789ABCDEF";
+
+// =============================================================================
+// Base64 Encoding
+// =============================================================================
+
+// Encode bytes to base64 string
+fn base64_encode(data: bytes*, len: int) -> str* {
+    // Calculate output length: 4 * ceil(len / 3)
+    int out_len = ((len + 2) / 3) * 4;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return "";
+    }
+    
+    str* output = mapped + 8;
+    int out_idx = 0;
+    int i = 0;
+    
+    while (i < len) {
+        // Get 3 bytes (or less at end)
+        int b0 = data[i];
+        int b1 = (i + 1 < len) ? data[i + 1] : 0;
+        int b2 = (i + 2 < len) ? data[i + 2] : 0;
+        
+        // Encode to 4 characters
+        output[out_idx] = BASE64_ALPHABET[(b0 >> 2) & 0x3F];
+        output[out_idx + 1] = BASE64_ALPHABET[((b0 << 4) | (b1 >> 4)) & 0x3F];
+        
+        if (i + 1 < len) {
+            output[out_idx + 2] = BASE64_ALPHABET[((b1 << 2) | (b2 >> 6)) & 0x3F];
+        } else {
+            output[out_idx + 2] = 61;  // '='
+        }
+        
+        if (i + 2 < len) {
+            output[out_idx + 3] = BASE64_ALPHABET[b2 & 0x3F];
+        } else {
+            output[out_idx + 3] = 61;  // '='
+        }
+        
+        i = i + 3;
+        out_idx = out_idx + 4;
+    }
+    
+    output[out_len] = 0;
+    
+    // Set length header
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// Encode bytes to base64url string (URL-safe, no padding)
+fn base64url_encode(data: bytes*, len: int) -> str* {
+    // Calculate output length: 4 * ceil(len / 3)
+    int out_len = ((len + 2) / 3) * 4;
+    
+    // Remove padding
+    int padding = 0;
+    if (len % 3 == 1) {
+        padding = 2;
+    } else if (len % 3 == 2) {
+        padding = 1;
+    }
+    int actual_len = out_len - padding;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + actual_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return "";
+    }
+    
+    str* output = mapped + 8;
+    int out_idx = 0;
+    int i = 0;
+    
+    while (i < len) {
+        int b0 = data[i];
+        int b1 = (i + 1 < len) ? data[i + 1] : 0;
+        int b2 = (i + 2 < len) ? data[i + 2] : 0;
+        
+        output[out_idx] = BASE64URL_ALPHABET[(b0 >> 2) & 0x3F];
+        output[out_idx + 1] = BASE64URL_ALPHABET[((b0 << 4) | (b1 >> 4)) & 0x3F];
+        
+        if (i + 1 < len) {
+            output[out_idx + 2] = BASE64URL_ALPHABET[((b1 << 2) | (b2 >> 6)) & 0x3F];
+        }
+        
+        if (i + 2 < len) {
+            output[out_idx + 3] = BASE64URL_ALPHABET[b2 & 0x3F];
+        }
+        
+        i = i + 3;
+        out_idx = out_idx + 4;
+    }
+    
+    output[actual_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = actual_len;
+    
+    return output;
+}
+
+// Decode base64 character to value
+fn _base64_decode_char(c: int) -> int {
+    if (c >= 65 && c <= 90) {       // A-Z
+        return c - 65;
+    }
+    if (c >= 97 && c <= 122) {      // a-z
+        return c - 71;
+    }
+    if (c >= 48 && c <= 57) {       // 0-9
+        return c + 4;
+    }
+    if (c == 43) {                   // +
+        return 62;
+    }
+    if (c == 47) {                   // /
+        return 63;
+    }
+    if (c == 45) {                   // - (URL-safe)
+        return 62;
+    }
+    if (c == 95) {                   // _ (URL-safe)
+        return 63;
+    }
+    return 0;  // Invalid or padding
+}
+
+// Decode base64 string to bytes
+fn base64_decode(s: str*) -> bytes* {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    // Count padding
+    int padding = 0;
+    if (len > 0 && s[len - 1] == 61) {  // '='
+        padding = padding + 1;
+    }
+    if (len > 1 && s[len - 2] == 61) {
+        padding = padding + 1;
+    }
+    
+    // Calculate output length
+    int out_len = ((len - padding) * 3) / 4;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return 0;
+    }
+    
+    bytes* output = mapped + 8;
+    int out_idx = 0;
+    int i = 0;
+    
+    while (i < len - padding) {
+        int v0 = _base64_decode_char(s[i]);
+        int v1 = _base64_decode_char(s[i + 1]);
+        int v2 = (i + 2 < len - padding) ? _base64_decode_char(s[i + 2]) : 0;
+        int v3 = (i + 3 < len - padding) ? _base64_decode_char(s[i + 3]) : 0;
+        
+        output[out_idx] = (v0 << 2) | (v1 >> 4);
+        
+        if (out_idx + 1 < out_len) {
+            output[out_idx + 1] = ((v1 << 4) | (v2 >> 2)) & 0xFF;
+        }
+        
+        if (out_idx + 2 < out_len) {
+            output[out_idx + 2] = ((v2 << 6) | v3) & 0xFF;
+        }
+        
+        i = i + 4;
+        out_idx = out_idx + 3;
+    }
+    
+    output[out_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// =============================================================================
+// Hexadecimal Encoding
+// =============================================================================
+
+// Encode bytes to hex string (lowercase)
+fn hex_encode(data: bytes*, len: int) -> str* {
+    return hex_encode_with_case(data, len, false);
+}
+
+// Encode bytes to hex string (uppercase)
+fn hex_encode_upper(data: bytes*, len: int) -> str* {
+    return hex_encode_with_case(data, len, true);
+}
+
+// Encode bytes to hex string
+fn hex_encode_with_case(data: bytes*, len: int, upper: bool) -> str* {
+    int out_len = len * 2;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return "";
+    }
+    
+    str* output = mapped + 8;
+    bytes* alphabet = upper ? HEX_CHARS_UPPER : HEX_CHARS;
+    
+    int i = 0;
+    while (i < len) {
+        int byte_val = data[i] & 0xFF;
+        output[i * 2] = alphabet[(byte_val >> 4) & 0x0F];
+        output[i * 2 + 1] = alphabet[byte_val & 0x0F];
+        i = i + 1;
+    }
+    
+    output[out_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// Decode hex character to value
+fn _hex_decode_char(c: int) -> int {
+    if (c >= 48 && c <= 57) {       // 0-9
+        return c - 48;
+    }
+    if (c >= 65 && c <= 70) {       // A-F
+        return c - 55;
+    }
+    if (c >= 97 && c <= 102) {      // a-f
+        return c - 87;
+    }
+    return 0;  // Invalid
+}
+
+// Decode hex string to bytes
+fn hex_decode(s: str*) -> bytes* {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    int out_len = len / 2;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return 0;
+    }
+    
+    bytes* output = mapped + 8;
+    
+    int i = 0;
+    while (i < out_len) {
+        int hi = _hex_decode_char(s[i * 2]);
+        int lo = _hex_decode_char(s[i * 2 + 1]);
+        output[i] = (hi << 4) | lo;
+        i = i + 1;
+    }
+    
+    output[out_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// =============================================================================
+// URL Encoding
+// =============================================================================
+
+// Check if character is URL-safe
+fn _is_url_safe(c: int) -> bool {
+    // Alphanumeric or - _ . ~
+    if (c >= 48 && c <= 57) {       // 0-9
+        return true;
+    }
+    if (c >= 65 && c <= 90) {       // A-Z
+        return true;
+    }
+    if (c >= 97 && c <= 122) {      // a-z
+        return true;
+    }
+    if (c == 45 || c == 95 || c == 46 || c == 126) {  // - _ . ~
+        return true;
+    }
+    return false;
+}
+
+// URL encode a string
+fn url_encode(s: str*) -> str* {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    // First pass: count characters that need encoding
+    int extra = 0;
+    int i = 0;
+    while (i < len) {
+        if (!_is_url_safe(s[i])) {
+            extra = extra + 2;  // %XX adds 2 extra chars
+        }
+        i = i + 1;
+    }
+    
+    int out_len = len + extra;
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return "";
+    }
+    
+    str* output = mapped + 8;
+    int out_idx = 0;
+    i = 0;
+    
+    while (i < len) {
+        int c = s[i];
+        
+        if (_is_url_safe(c)) {
+            output[out_idx] = c;
+            out_idx = out_idx + 1;
+        } else {
+            output[out_idx] = 37;  // '%'
+            output[out_idx + 1] = HEX_CHARS_UPPER[(c >> 4) & 0x0F];
+            output[out_idx + 2] = HEX_CHARS_UPPER[c & 0x0F];
+            out_idx = out_idx + 3;
+        }
+        
+        i = i + 1;
+    }
+    
+    output[out_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// URL decode a string
+fn url_decode(s: str*) -> str* {
+    int* len_ptr = (s - 8);
+    int len = *len_ptr;
+    
+    // First pass: count characters after decoding
+    int out_len = 0;
+    int i = 0;
+    while (i < len) {
+        if (s[i] == 37 && i + 2 < len) {  // '%'
+            out_len = out_len + 1;
+            i = i + 3;
+        } else if (s[i] == 43) {  // '+' -> ' '
+            out_len = out_len + 1;
+            i = i + 1;
+        } else {
+            out_len = out_len + 1;
+            i = i + 1;
+        }
+    }
+    
+    // Allocate output buffer
+    int alloc_size = 8 + out_len + 1;
+    void* mapped;
+    syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+    
+    if (mapped == -1) {
+        return "";
+    }
+    
+    str* output = mapped + 8;
+    int out_idx = 0;
+    i = 0;
+    
+    while (i < len) {
+        if (s[i] == 37 && i + 2 < len) {  // '%'
+            int hi = _hex_decode_char(s[i + 1]);
+            int lo = _hex_decode_char(s[i + 2]);
+            output[out_idx] = (hi << 4) | lo;
+            i = i + 3;
+        } else if (s[i] == 43) {  // '+' -> ' '
+            output[out_idx] = 32;
+            i = i + 1;
+        } else {
+            output[out_idx] = s[i];
+            i = i + 1;
+        }
+        out_idx = out_idx + 1;
+    }
+    
+    output[out_len] = 0;
+    
+    int* len_header = mapped;
+    *len_header = out_len;
+    
+    return output;
+}
+
+// =============================================================================
+// Base64Encoder Type
+// =============================================================================
+
+struct Base64Encoder {
+    buffer: bytes*;
+    capacity: int;
+    len: int;
+}
+
+impl Base64Encoder {
+    constructor() {
+        self.buffer = 0;
+        self.capacity = 0;
+        self.len = 0;
+    }
+    
+    fn new() -> Base64Encoder* {
+        Base64Encoder* e = new Base64Encoder();
+        e._init(256);
+        return e;
+    }
+    
+    fn with_capacity(cap: int) -> Base64Encoder* {
+        Base64Encoder* e = new Base64Encoder();
+        e._init(cap);
+        return e;
+    }
+    
+    fn _init(self, cap: int) -> void {
+        int alloc_size = cap;
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped != -1) {
+            self.buffer = mapped;
+            self.capacity = cap;
+            self.len = 0;
+        }
+    }
+    
+    fn write(self, data: bytes*, len: int) -> void {
+        // Ensure capacity
+        int needed = self.len + len;
+        if (needed > self.capacity) {
+            self._grow(needed);
+        }
+        
+        // Copy data
+        int i = 0;
+        while (i < len) {
+            self.buffer[self.len + i] = data[i];
+            i = i + 1;
+        }
+        self.len = self.len + len;
+    }
+    
+    fn write_str(self, s: str*) -> void {
+        int* len_ptr = (s - 8);
+        self.write(s, *len_ptr);
+    }
+    
+    fn finish(self) -> str* {
+        return base64_encode(self.buffer, self.len);
+    }
+    
+    fn finish_url(self) -> str* {
+        return base64url_encode(self.buffer, self.len);
+    }
+    
+    fn reset(self) -> void {
+        self.len = 0;
+    }
+    
+    fn _grow(self, needed: int) -> void {
+        int new_cap = self.capacity * 2;
+        if (new_cap < needed) {
+            new_cap = needed;
+        }
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, new_cap, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return;
+        }
+        
+        // Copy old data
+        int i = 0;
+        while (i < self.len) {
+            mapped[i] = self.buffer[i];
+            i = i + 1;
+        }
+        
+        // Free old buffer
+        if (self.buffer != 0) {
+            syscall SYS_MUNMAP, self.buffer, self.capacity, ERRNO;
+        }
+        
+        self.buffer = mapped;
+        self.capacity = new_cap;
+    }
+}

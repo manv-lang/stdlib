@@ -1,0 +1,516 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/io/io.mv
+// description: I/O module with OOP design - Stdin, Stdout, Stderr, Reader, Writer
+//
+// This module provides I/O operations using impl blocks.
+// All functions are implemented in pure ManV using syscalls.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers for Linux x86-64
+int SYS_READ = 0;
+int SYS_WRITE = 1;
+int SYS_OPEN = 2;
+int SYS_CLOSE = 3;
+int SYS_LSEEK = 8;
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+int SYS_EXIT = 60;
+
+// File descriptors
+int STDIN_FD = 0;
+int STDOUT_FD = 1;
+int STDERR_FD = 2;
+
+// File open flags
+int O_RDONLY = 0;
+int O_WRONLY = 1;
+int O_RDWR = 2;
+int O_CREAT = 64;
+int O_TRUNC = 512;
+int O_APPEND = 1024;
+
+// Seek origins
+int SEEK_SET = 0;
+int SEEK_CUR = 1;
+int SEEK_END = 2;
+
+// Memory protection flags
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+
+// Memory mapping flags
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Writer Type - Write to file descriptor
+// =============================================================================
+
+struct Writer {
+    fd: int;
+    error: int;
+}
+
+impl Writer {
+    // Create writer for file descriptor
+    constructor(fd: int) {
+        self.fd = fd;
+        self.error = 0;
+    }
+    
+    // Create stdout writer
+    fn stdout() -> Writer* {
+        return new Writer(STDOUT_FD);
+    }
+    
+    // Create stderr writer
+    fn stderr() -> Writer* {
+        return new Writer(STDERR_FD);
+    }
+    
+    // Write bytes
+    fn write(self, data: void*, len: int) -> int {
+        int written;
+        syscall SYS_WRITE, self.fd, data, len, written, ERRNO;
+        self.error = ERRNO;
+        return written;
+    }
+    
+    // Write string
+    fn write_str(self, s: str*) -> int {
+        // Get length from header
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int written;
+        syscall SYS_WRITE, self.fd, s, len, written, ERRNO;
+        self.error = ERRNO;
+        return written;
+    }
+    
+    // Write string literal
+    fn write_literal(self, s: str) -> int {
+        // Get length from header
+        int* len_ptr = (s - 8);
+        int len = *len_ptr;
+        
+        int written;
+        syscall SYS_WRITE, self.fd, s, len, written, ERRNO;
+        self.error = ERRNO;
+        return written;
+    }
+    
+    // Write byte
+    fn write_byte(self, b: int) -> int {
+        bytes buffer[1];
+        buffer[0] = b;
+        
+        int written;
+        syscall SYS_WRITE, self.fd, buffer, 1, written, ERRNO;
+        self.error = ERRNO;
+        return written;
+    }
+    
+    // Write newline
+    fn write_newline(self) -> int {
+        return self.write_literal("\n");
+    }
+    
+    // Write integer
+    fn write_int(self, n: int) -> int {
+        // Handle zero
+        if (n == 0) {
+            return self.write_literal("0");
+        }
+        
+        // Handle negative
+        int is_negative = n < 0;
+        int value = is_negative ? -n : n;
+        
+        // Buffer for digits (max 20 digits for 64-bit)
+        bytes buffer[24];
+        int pos = 23;
+        buffer[pos] = 0;
+        pos = pos - 1;
+        
+        while (value > 0) {
+            int digit = value % 10;
+            buffer[pos] = 48 + digit;
+            value = value / 10;
+            pos = pos - 1;
+        }
+        
+        if (is_negative) {
+            buffer[pos] = 45;  // '-'
+            pos = pos - 1;
+        }
+        
+        int len = 23 - pos - 1;
+        return self.write(buffer + pos + 1, len);
+    }
+    
+    // Flush (no-op for unbuffered)
+    fn flush(self) -> void {
+        // No buffering, so nothing to flush
+    }
+    
+    // Get last error
+    fn get_error(self) -> int {
+        return self.error;
+    }
+    
+    // Check if has error
+    fn has_error(self) -> bool {
+        return self.error != 0;
+    }
+}
+
+// =============================================================================
+// Reader Type - Read from file descriptor
+// =============================================================================
+
+struct Reader {
+    fd: int;
+    error: int;
+    eof: bool;
+}
+
+impl Reader {
+    // Create reader for file descriptor
+    constructor(fd: int) {
+        self.fd = fd;
+        self.error = 0;
+        self.eof = false;
+    }
+    
+    // Create stdin reader
+    fn stdin() -> Reader* {
+        return new Reader(STDIN_FD);
+    }
+    
+    // Read bytes into buffer
+    fn read(self, buffer: void*, max_len: int) -> int {
+        int bytes_read;
+        syscall SYS_READ, self.fd, buffer, max_len, bytes_read, ERRNO;
+        self.error = ERRNO;
+        
+        if (bytes_read == 0) {
+            self.eof = true;
+        }
+        
+        return bytes_read;
+    }
+    
+    // Read a single byte
+    fn read_byte(self) -> int {
+        bytes buffer[1];
+        int bytes_read = self.read(buffer, 1);
+        
+        if (bytes_read <= 0) {
+            return -1;
+        }
+        
+        return buffer[0];
+    }
+    
+    // Read line (up to newline or max_len)
+    fn read_line(self, buffer: str*, max_len: int) -> int {
+        int pos = 0;
+        
+        while (pos < max_len - 1) {
+            int b = self.read_byte();
+            
+            if (b < 0) {
+                break;  // EOF or error
+            }
+            
+            buffer[pos] = b;
+            pos = pos + 1;
+            
+            if (b == 10) {  // newline
+                break;
+            }
+        }
+        
+        buffer[pos] = 0;  // null terminator
+        
+        // Update length header
+        int* len_ptr = (buffer - 8);
+        *len_ptr = pos;
+        
+        return pos;
+    }
+    
+    // Read all content
+    fn read_all(self) -> str* {
+        // Initial buffer size
+        int capacity = 4096;
+        int total = 0;
+        
+        // Allocate buffer
+        int alloc_size = 8 + capacity + 1;
+        alloc_size = (alloc_size + 15) & ~15;
+        
+        void* mapped;
+        syscall SYS_MMAP, 0, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0, mapped, ERRNO;
+        
+        if (mapped == -1) {
+            return 0;
+        }
+        
+        str* buffer = mapped + 8;
+        
+        // Read in chunks
+        while (true) {
+            int remaining = capacity - total;
+            
+            if (remaining <= 0) {
+                // Need to grow buffer - would need realloc
+                break;
+            }
+            
+            int bytes_read = self.read(buffer + total, remaining);
+            
+            if (bytes_read <= 0) {
+                break;
+            }
+            
+            total = total + bytes_read;
+        }
+        
+        buffer[total] = 0;
+        
+        // Update length header
+        int* len_ptr = mapped;
+        *len_ptr = total;
+        
+        return buffer;
+    }
+    
+    // Check for EOF
+    fn is_eof(self) -> bool {
+        return self.eof;
+    }
+    
+    // Get last error
+    fn get_error(self) -> int {
+        return self.error;
+    }
+    
+    // Check if has error
+    fn has_error(self) -> bool {
+        return self.error != 0;
+    }
+}
+
+// =============================================================================
+// Stdout - Global stdout writer
+// =============================================================================
+
+struct Stdout {
+    writer: Writer*;
+}
+
+impl Stdout {
+    constructor() {
+        self.writer = Writer.stdout();
+    }
+    
+    fn print(self, s: str) -> void {
+        self.writer.write_literal(s);
+    }
+    
+    fn println(self, s: str) -> void {
+        self.writer.write_literal(s);
+        self.writer.write_newline();
+    }
+    
+    fn print_int(self, n: int) -> void {
+        self.writer.write_int(n);
+    }
+    
+    fn write(self, data: void*, len: int) -> int {
+        return self.writer.write(data, len);
+    }
+    
+    fn flush(self) -> void {
+        self.writer.flush();
+    }
+}
+
+// =============================================================================
+// Stderr - Global stderr writer
+// =============================================================================
+
+struct Stderr {
+    writer: Writer*;
+}
+
+impl Stderr {
+    constructor() {
+        self.writer = Writer.stderr();
+    }
+    
+    fn print(self, s: str) -> void {
+        self.writer.write_literal(s);
+    }
+    
+    fn println(self, s: str) -> void {
+        self.writer.write_literal(s);
+        self.writer.write_newline();
+    }
+    
+    fn print_int(self, n: int) -> void {
+        self.writer.write_int(n);
+    }
+    
+    fn write(self, data: void*, len: int) -> int {
+        return self.writer.write(data, len);
+    }
+    
+    fn flush(self) -> void {
+        self.writer.flush();
+    }
+}
+
+// =============================================================================
+// Stdin - Global stdin reader
+// =============================================================================
+
+struct Stdin {
+    reader: Reader*;
+}
+
+impl Stdin {
+    constructor() {
+        self.reader = Reader.stdin();
+    }
+    
+    fn read_line(self, buffer: str*, max_len: int) -> int {
+        return self.reader.read_line(buffer, max_len);
+    }
+    
+    fn read_byte(self) -> int {
+        return self.reader.read_byte();
+    }
+    
+    fn read_all(self) -> str* {
+        return self.reader.read_all();
+    }
+    
+    fn is_eof(self) -> bool {
+        return self.reader.is_eof();
+    }
+}
+
+// =============================================================================
+// Convenience Functions
+// =============================================================================
+
+// Print string to stdout
+fn print(text: str) -> void {
+    int* len_ptr = (text - 8);
+    int len = *len_ptr;
+    
+    int written;
+    syscall SYS_WRITE, STDOUT_FD, text, len, written, ERRNO;
+}
+
+// Print string with newline to stdout
+fn println(text: str) -> void {
+    int* len_ptr = (text - 8);
+    int len = *len_ptr;
+    
+    int written;
+    syscall SYS_WRITE, STDOUT_FD, text, len, written, ERRNO;
+    syscall SYS_WRITE, STDOUT_FD, "\n", 1, written, ERRNO;
+}
+
+// Print integer to stdout
+fn printi(n: int) -> void {
+    Writer* w = Writer.stdout();
+    w.write_int(n);
+}
+
+// Print integer with newline to stdout
+fn printiln(n: int) -> void {
+    Writer* w = Writer.stdout();
+    w.write_int(n);
+    w.write_newline();
+}
+
+// Flush stdout
+fn flush_stdout() -> void {
+    // No-op for unbuffered
+}
+
+// Flush stderr
+fn flush_stderr() -> void {
+    // No-op for unbuffered
+}
+
+// Flush all
+fn flush() -> void {
+    flush_stdout();
+    flush_stderr();
+}
+
+// Print error message to stderr
+fn eprint(text: str) -> void {
+    int* len_ptr = (text - 8);
+    int len = *len_ptr;
+    
+    int written;
+    syscall SYS_WRITE, STDERR_FD, text, len, written, ERRNO;
+}
+
+// Print error message with newline to stderr
+fn eprintln(text: str) -> void {
+    int* len_ptr = (text - 8);
+    int len = *len_ptr;
+    
+    int written;
+    syscall SYS_WRITE, STDERR_FD, text, len, written, ERRNO;
+    syscall SYS_WRITE, STDERR_FD, "\n", 1, written, ERRNO;
+}
+
+// Read line from stdin
+fn read_line(buffer: str*, max_len: int) -> int {
+    Reader* r = Reader.stdin();
+    return r.read_line(buffer, max_len);
+}
+
+// Read all from stdin
+fn read_all() -> str* {
+    Reader* r = Reader.stdin();
+    return r.read_all();
+}

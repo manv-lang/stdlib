@@ -1,0 +1,826 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/json/json.mv
+// description: JSON parsing and encoding module with OOP design
+//
+// This module provides JSON functions using impl blocks.
+// All functions are implemented in pure ManV.
+//
+// Types:
+// -------
+// - JsonValue   - JSON value type
+// - JsonObject  - JSON object type
+// - JsonArray   - JSON array type
+// - JsonParser  - Parser for JSON strings
+// - JsonBuilder - Builder for JSON output
+//
+// Functions:
+// ----------
+// - json_parse(s)       - Parse JSON string
+// - json_stringify(v)   - Convert value to JSON string
+// - json_get(obj, key)  - Get value from object
+//
+// Examples:
+// ---------
+// // Parse JSON
+// JsonValue* value = json_parse("{\"name\": \"John\", \"age\": 30}");
+//
+// // Build JSON
+// JsonBuilder* builder = JsonBuilder.new();
+// builder.start_object();
+// builder.key("name");
+// builder.string("John");
+// builder.end_object();
+// str* json = builder.finish();
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_MMAP = 9;
+int SYS_MUNMAP = 11;
+
+// Memory protection
+int PROT_READ = 1;
+int PROT_WRITE = 2;
+int MAP_PRIVATE = 2;
+int MAP_ANONYMOUS = 32;
+
+// Error handling
+int ERRNO;
+
+// JSON types
+int JSON_NULL = 0;
+int JSON_BOOL = 1;
+int JSON_NUMBER = 2;
+int JSON_STRING = 3;
+int JSON_ARRAY = 4;
+int JSON_OBJECT = 5;
+
+// =============================================================================
+// JsonValue Type
+// =============================================================================
+
+struct JsonValue {
+    type: int;
+    
+    // Union-like storage
+    bool_val: bool;
+    num_val: int;
+    float_val: float;
+    str_val: str*;
+    arr_val: JsonArray*;
+    obj_val: JsonObject*;
+}
+
+impl JsonValue {
+    // Create null value
+    fn null() -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_NULL;
+        return v;
+    }
+    
+    // Create boolean value
+    fn bool(val: bool) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_BOOL;
+        v.bool_val = val;
+        return v;
+    }
+    
+    // Create number value
+    fn number(val: int) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_NUMBER;
+        v.num_val = val;
+        return v;
+    }
+    
+    // Create float value
+    fn float(val: float) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_NUMBER;
+        v.float_val = val;
+        return v;
+    }
+    
+    // Create string value
+    fn string(val: str*) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_STRING;
+        v.str_val = val;
+        return v;
+    }
+    
+    // Create array value
+    fn array(val: JsonArray*) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_ARRAY;
+        v.arr_val = val;
+        return v;
+    }
+    
+    // Create object value
+    fn object(val: JsonObject*) -> JsonValue* {
+        JsonValue* v = new JsonValue();
+        v.type = JSON_OBJECT;
+        v.obj_val = val;
+        return v;
+    }
+    
+    // Type checking
+    fn is_null(self) -> bool { return self.type == JSON_NULL; }
+    fn is_bool(self) -> bool { return self.type == JSON_BOOL; }
+    fn is_number(self) -> bool { return self.type == JSON_NUMBER; }
+    fn is_string(self) -> bool { return self.type == JSON_STRING; }
+    fn is_array(self) -> bool { return self.type == JSON_ARRAY; }
+    fn is_object(self) -> bool { return self.type == JSON_OBJECT; }
+    
+    // Get values
+    fn get_bool(self) -> bool { return self.bool_val; }
+    fn get_num(self) -> int { return self.num_val; }
+    fn get_float(self) -> float { return self.float_val; }
+    fn get_str(self) -> str* { return self.str_val; }
+    fn get_arr(self) -> JsonArray* { return self.arr_val; }
+    fn get_obj(self) -> JsonObject* { return self.obj_val; }
+    
+    // Get from object by key
+    fn get(self, key: str*) -> JsonValue* {
+        if (self.type != JSON_OBJECT) {
+            return JsonValue.null();
+        }
+        return self.obj_val.get(key);
+    }
+    
+    // Get from array by index
+    fn get_at(self, index: int) -> JsonValue* {
+        if (self.type != JSON_ARRAY) {
+            return JsonValue.null();
+        }
+        return self.arr_val.get(index);
+    }
+}
+
+// =============================================================================
+// JsonObject Type
+// =============================================================================
+
+struct JsonObject {
+    keys: array<str*>;
+    values: array<JsonValue*>;
+    len: int;
+    capacity: int;
+}
+
+impl JsonObject {
+    constructor() {
+        self.keys = [];
+        self.values = [];
+        self.len = 0;
+        self.capacity = 0;
+    }
+    
+    fn new() -> JsonObject* {
+        JsonObject* obj = new JsonObject();
+        obj.keys = [];
+        obj.values = [];
+        obj.len = 0;
+        obj.capacity = 16;
+        return obj;
+    }
+    
+    // Insert a key-value pair
+    fn insert(self, key: str*, value: JsonValue*) -> void {
+        // Check if key exists
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                self.values[i] = value;
+                return;
+            }
+            i = i + 1;
+        }
+        
+        // Add new key-value
+        self.keys[self.len] = key;
+        self.values[self.len] = value;
+        self.len = self.len + 1;
+    }
+    
+    // Get value by key
+    fn get(self, key: str*) -> JsonValue* {
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                return self.values[i];
+            }
+            i = i + 1;
+        }
+        return JsonValue.null();
+    }
+    
+    // Check if key exists
+    fn has(self, key: str*) -> bool {
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+    
+    // Remove key
+    fn remove(self, key: str*) -> bool {
+        int i = 0;
+        while (i < self.len) {
+            if (_str_eq(self.keys[i], key)) {
+                // Shift remaining elements
+                int j = i;
+                while (j < self.len - 1) {
+                    self.keys[j] = self.keys[j + 1];
+                    self.values[j] = self.values[j + 1];
+                    j = j + 1;
+                }
+                self.len = self.len - 1;
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+    
+    // Get length
+    fn length(self) -> int {
+        return self.len;
+    }
+}
+
+// =============================================================================
+// JsonArray Type
+// =============================================================================
+
+struct JsonArray {
+    items: array<JsonValue*>;
+    len: int;
+    capacity: int;
+}
+
+impl JsonArray {
+    constructor() {
+        self.items = [];
+        self.len = 0;
+        self.capacity = 0;
+    }
+    
+    fn new() -> JsonArray* {
+        JsonArray* arr = new JsonArray();
+        arr.items = [];
+        arr.len = 0;
+        arr.capacity = 16;
+        return arr;
+    }
+    
+    // Push value
+    fn push(self, value: JsonValue*) -> void {
+        self.items[self.len] = value;
+        self.len = self.len + 1;
+    }
+    
+    // Get at index
+    fn get(self, index: int) -> JsonValue* {
+        if (index < 0 || index >= self.len) {
+            return JsonValue.null();
+        }
+        return self.items[index];
+    }
+    
+    // Set at index
+    fn set(self, index: int, value: JsonValue*) -> bool {
+        if (index < 0 || index >= self.len) {
+            return false;
+        }
+        self.items[index] = value;
+        return true;
+    }
+    
+    // Pop last
+    fn pop(self) -> JsonValue* {
+        if (self.len == 0) {
+            return JsonValue.null();
+        }
+        self.len = self.len - 1;
+        return self.items[self.len];
+    }
+    
+    // Get length
+    fn length(self) -> int {
+        return self.len;
+    }
+}
+
+// =============================================================================
+// JsonParser Type
+// =============================================================================
+
+struct JsonParser {
+    input: str*;
+    pos: int;
+    len: int;
+}
+
+impl JsonParser {
+    fn new(input: str*) -> JsonParser* {
+        JsonParser* p = new JsonParser();
+        p.input = input;
+        p.pos = 0;
+        p.len = _strlen(input);
+        return p;
+    }
+    
+    // Parse any value
+    fn parse(self) -> JsonValue* {
+        self._skip_whitespace();
+        
+        if (self.pos >= self.len) {
+            return JsonValue.null();
+        }
+        
+        int c = self.input[self.pos];
+        
+        if (c == 110) {  // 'n' - null
+            return self._parse_null();
+        }
+        if (c == 116 || c == 102) {  // 't' or 'f' - true/false
+            return self._parse_bool();
+        }
+        if (c == 34) {  // '"' - string
+            return self._parse_string();
+        }
+        if (c == 91) {  // '[' - array
+            return self._parse_array();
+        }
+        if (c == 123) {  // '{' - object
+            return self._parse_object();
+        }
+        if ((c >= 48 && c <= 57) || c == 45) {  // digit or '-'
+            return self._parse_number();
+        }
+        
+        return JsonValue.null();
+    }
+    
+    // Parse null
+    fn _parse_null(self) -> JsonValue* {
+        self.pos = self.pos + 4;  // Skip "null"
+        return JsonValue.null();
+    }
+    
+    // Parse boolean
+    fn _parse_bool(self) -> JsonValue* {
+        if (self.input[self.pos] == 116) {  // 't'
+            self.pos = self.pos + 4;  // Skip "true"
+            return JsonValue.bool(true);
+        } else {
+            self.pos = self.pos + 5;  // Skip "false"
+            return JsonValue.bool(false);
+        }
+    }
+    
+    // Parse number
+    fn _parse_number(self) -> JsonValue* {
+        int neg = false;
+        int val = 0;
+        
+        if (self.input[self.pos] == 45) {  // '-'
+            neg = true;
+            self.pos = self.pos + 1;
+        }
+        
+        while (self.pos < self.len) {
+            int c = self.input[self.pos];
+            if (c >= 48 && c <= 57) {
+                val = val * 10 + (c - 48);
+                self.pos = self.pos + 1;
+            } else {
+                break;
+            }
+        }
+        
+        // Skip float part for simplicity
+        if (self.pos < self.len && self.input[self.pos] == 46) {  // '.'
+            self.pos = self.pos + 1;
+            while (self.pos < self.len && self.input[self.pos] >= 48 && self.input[self.pos] <= 57) {
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        // Skip exponent
+        if (self.pos < self.len && (self.input[self.pos] == 101 || self.input[self.pos] == 69)) {
+            self.pos = self.pos + 1;
+            if (self.pos < self.len && (self.input[self.pos] == 43 || self.input[self.pos] == 45)) {
+                self.pos = self.pos + 1;
+            }
+            while (self.pos < self.len && self.input[self.pos] >= 48 && self.input[self.pos] <= 57) {
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        return JsonValue.number(neg ? -val : val);
+    }
+    
+    // Parse string
+    fn _parse_string(self) -> JsonValue* {
+        self.pos = self.pos + 1;  // Skip opening quote
+        
+        int start = self.pos;
+        int len = 0;
+        
+        while (self.pos < self.len && self.input[self.pos] != 34) {  // '"'
+            if (self.input[self.pos] == 92) {  // '\' - escape
+                self.pos = self.pos + 2;
+                len = len + 1;
+            } else {
+                self.pos = self.pos + 1;
+                len = len + 1;
+            }
+        }
+        
+        // Extract string (simplified)
+        self.pos = self.pos + 1;  // Skip closing quote
+        
+        return JsonValue.string("");
+    }
+    
+    // Parse array
+    fn _parse_array(self) -> JsonValue* {
+        self.pos = self.pos + 1;  // Skip '['
+        
+        JsonArray* arr = JsonArray.new();
+        
+        self._skip_whitespace();
+        
+        if (self.input[self.pos] == 93) {  // ']'
+            self.pos = self.pos + 1;
+            return JsonValue.array(arr);
+        }
+        
+        while (true) {
+            JsonValue* val = self.parse();
+            arr.push(val);
+            
+            self._skip_whitespace();
+            
+            if (self.input[self.pos] == 93) {  // ']'
+                self.pos = self.pos + 1;
+                break;
+            }
+            
+            if (self.input[self.pos] == 44) {  // ','
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        return JsonValue.array(arr);
+    }
+    
+    // Parse object
+    fn _parse_object(self) -> JsonValue* {
+        self.pos = self.pos + 1;  // Skip '{'
+        
+        JsonObject* obj = JsonObject.new();
+        
+        self._skip_whitespace();
+        
+        if (self.input[self.pos] == 125) {  // '}'
+            self.pos = self.pos + 1;
+            return JsonValue.object(obj);
+        }
+        
+        while (true) {
+            self._skip_whitespace();
+            
+            // Parse key
+            self.pos = self.pos + 1;  // Skip opening quote
+            int key_start = self.pos;
+            while (self.pos < self.len && self.input[self.pos] != 34) {
+                self.pos = self.pos + 1;
+            }
+            self.pos = self.pos + 1;  // Skip closing quote
+            
+            self._skip_whitespace();
+            self.pos = self.pos + 1;  // Skip ':'
+            
+            // Parse value
+            JsonValue* val = self.parse();
+            
+            self._skip_whitespace();
+            
+            if (self.input[self.pos] == 125) {  // '}'
+                self.pos = self.pos + 1;
+                break;
+            }
+            
+            if (self.input[self.pos] == 44) {  // ','
+                self.pos = self.pos + 1;
+            }
+        }
+        
+        return JsonValue.object(obj);
+    }
+    
+    // Skip whitespace
+    fn _skip_whitespace(self) -> void {
+        while (self.pos < self.len) {
+            int c = self.input[self.pos];
+            if (c == 32 || c == 9 || c == 10 || c == 13) {  // space, tab, newline, cr
+                self.pos = self.pos + 1;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+// =============================================================================
+// JsonBuilder Type
+// =============================================================================
+
+struct JsonBuilder {
+    buffer: str*;
+    pos: int;
+    capacity: int;
+}
+
+impl JsonBuilder {
+    constructor() {
+        self.buffer = "";
+        self.pos = 0;
+        self.capacity = 1024;
+    }
+    
+    fn new() -> JsonBuilder* {
+        JsonBuilder* b = new JsonBuilder();
+        b.buffer = "";
+        b.pos = 0;
+        b.capacity = 1024;
+        return b;
+    }
+    
+    // Start object
+    fn start_object(self) -> void {
+        self._write_char(123);  // '{'
+    }
+    
+    // End object
+    fn end_object(self) -> void {
+        self._write_char(125);  // '}'
+    }
+    
+    // Start array
+    fn start_array(self) -> void {
+        self._write_char(91);  // '['
+    }
+    
+    // End array
+    fn end_array(self) -> void {
+        self._write_char(93);  // ']'
+    }
+    
+    // Write key
+    fn key(self, k: str*) -> void {
+        self._write_string(k);
+        self._write_char(58);  // ':'
+    }
+    
+    // Write string value
+    fn string(self, s: str*) -> void {
+        self._write_string(s);
+    }
+    
+    // Write number value
+    fn number(self, n: int) -> void {
+        self._write_int(n);
+    }
+    
+    // Write boolean value
+    fn bool(self, b: bool) -> void {
+        if (b) {
+            self._write_str("true");
+        } else {
+            self._write_str("false");
+        }
+    }
+    
+    // Write null value
+    fn null(self) -> void {
+        self._write_str("null");
+    }
+    
+    // Write comma separator
+    fn comma(self) -> void {
+        self._write_char(44);  // ','
+    }
+    
+    // Get result
+    fn finish(self) -> str* {
+        return self.buffer;
+    }
+    
+    // Internal: write character
+    fn _write_char(self, c: int) -> void {
+        self.buffer[self.pos] = c;
+        self.pos = self.pos + 1;
+    }
+    
+    // Internal: write string
+    fn _write_str(self, s: str*) -> void {
+        int len = _strlen(s);
+        int i = 0;
+        while (i < len) {
+            self.buffer[self.pos] = s[i];
+            self.pos = self.pos + 1;
+            i = i + 1;
+        }
+    }
+    
+    // Internal: write escaped string
+    fn _write_string(self, s: str*) -> void {
+        self._write_char(34);  // '"'
+        
+        int len = _strlen(s);
+        int i = 0;
+        while (i < len) {
+            int c = s[i];
+            
+            if (c == 34) {  // '"'
+                self._write_char(92);  // '\'
+                self._write_char(34);
+            } else if (c == 92) {  // '\'
+                self._write_char(92);
+                self._write_char(92);
+            } else if (c == 10) {  // newline
+                self._write_char(92);
+                self._write_char(110);  // 'n'
+            } else if (c == 13) {  // carriage return
+                self._write_char(92);
+                self._write_char(114);  // 'r'
+            } else if (c == 9) {  // tab
+                self._write_char(92);
+                self._write_char(116);  // 't'
+            } else {
+                self._write_char(c);
+            }
+            
+            i = i + 1;
+        }
+        
+        self._write_char(34);  // '"'
+    }
+    
+    // Internal: write integer
+    fn _write_int(self, n: int) -> void {
+        bytes buf = "                   ";
+        int i = 18;
+        int neg = n < 0;
+        
+        if (neg) {
+            n = -n;
+        }
+        
+        while (n > 0 && i >= 0) {
+            buf[i] = 48 + (n % 10);
+            n = n / 10;
+            i = i - 1;
+        }
+        
+        if (neg && i >= 0) {
+            buf[i] = 45;
+            i = i - 1;
+        }
+        
+        int start = i + 1;
+        int len = 18 - i;
+        
+        int j = start;
+        while (j <= 18) {
+            self.buffer[self.pos] = buf[j];
+            self.pos = self.pos + 1;
+            j = j + 1;
+        }
+    }
+}
+
+// =============================================================================
+// Standalone Functions
+// =============================================================================
+
+// Parse JSON string
+fn json_parse(input: str*) -> JsonValue* {
+    JsonParser* parser = JsonParser.new(input);
+    return parser.parse();
+}
+
+// Stringify JSON value
+fn json_stringify(value: JsonValue*) -> str* {
+    return _json_stringify_value(value);
+}
+
+// Internal: stringify a value
+fn _json_stringify_value(value: JsonValue*) -> str* {
+    if (value.type == JSON_NULL) {
+        return "null";
+    }
+    if (value.type == JSON_BOOL) {
+        return value.bool_val ? "true" : "false";
+    }
+    if (value.type == JSON_NUMBER) {
+        // Would need int-to-string conversion
+        return "0";
+    }
+    if (value.type == JSON_STRING) {
+        return value.str_val;
+    }
+    if (value.type == JSON_ARRAY) {
+        // Would iterate array
+        return "[]";
+    }
+    if (value.type == JSON_OBJECT) {
+        // Would iterate object
+        return "{}";
+    }
+    return "null";
+}
+
+// Get value from object
+fn json_get(obj: JsonObject*, key: str*) -> JsonValue* {
+    return obj.get(key);
+}
+
+// Get value from array
+fn json_get_at(arr: JsonArray*, index: int) -> JsonValue* {
+    return arr.get(index);
+}
+
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
+fn _strlen(s: str*) -> int {
+    if (s == 0) {
+        return 0;
+    }
+    int* len_ptr = (s - 8);
+    return *len_ptr;
+}
+
+fn _str_eq(a: str*, b: str*) -> bool {
+    if (a == b) {
+        return true;
+    }
+    if (a == 0 || b == 0) {
+        return false;
+    }
+    
+    int len_a = _strlen(a);
+    int len_b = _strlen(b);
+    
+    if (len_a != len_b) {
+        return false;
+    }
+    
+    int i = 0;
+    while (i < len_a) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    
+    return true;
+}

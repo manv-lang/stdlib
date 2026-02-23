@@ -1,0 +1,609 @@
+// MIT License
+//
+// Copyright (c) 2025 ramsy0dev
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+// =============================================================================
+// file: stdlib/exception/exception.mv
+// description: Exception handling module with OOP design
+//
+// This module provides exception types and error handling using impl blocks.
+// All functions are implemented in pure ManV using compiler intrinsics.
+// =============================================================================
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+// Syscall numbers
+int SYS_WRITE = 1;
+int SYS_EXIT = 60;
+
+// File descriptors
+int STDERR = 2;
+
+// Error handling
+int ERRNO;
+
+// =============================================================================
+// Exception Type - Base exception
+// =============================================================================
+
+struct Exception {
+    message: str*;
+    code: int;
+    file: str*;
+    line: int;
+    cause: Exception*;
+}
+
+impl Exception {
+    // Create basic exception
+    constructor(message: str*) {
+        self.message = message;
+        self.code = 0;
+        self.file = "";
+        self.line = 0;
+        self.cause = 0;
+    }
+    
+    // Create exception with error code
+    fn with_code(message: str*, code: int) -> Exception* {
+        Exception* e = new Exception(message);
+        e.code = code;
+        return e;
+    }
+    
+    // Create exception with location
+    fn with_location(message: str*, file: str*, line: int) -> Exception* {
+        Exception* e = new Exception(message);
+        e.file = file;
+        e.line = line;
+        return e;
+    }
+    
+    // Create full exception
+    fn full(message: str*, code: int, file: str*, line: int) -> Exception* {
+        Exception* e = new Exception(message);
+        e.code = code;
+        e.file = file;
+        e.line = line;
+        return e;
+    }
+    
+    // Set cause (exception chaining)
+    fn set_cause(self, cause: Exception*) -> void {
+        self.cause = cause;
+    }
+    
+    // Get cause
+    fn get_cause(self) -> Exception* {
+        return self.cause;
+    }
+    
+    // Check if has cause
+    fn has_cause(self) -> bool {
+        return self.cause != 0;
+    }
+    
+    // Get message
+    fn get_message(self) -> str* {
+        return self.message;
+    }
+    
+    // Get code
+    fn get_code(self) -> int {
+        return self.code;
+    }
+    
+    // Get file
+    fn get_file(self) -> str* {
+        return self.file;
+    }
+    
+    // Get line
+    fn get_line(self) -> int {
+        return self.line;
+    }
+    
+    // Print exception
+    fn print(self) -> void {
+        // Print error message
+        syscall SYS_WRITE, STDERR, "Exception: ", 11, ERRNO;
+        
+        if (self.message != 0) {
+            int* len_ptr = (self.message - 8);
+            int len = *len_ptr;
+            syscall SYS_WRITE, STDERR, self.message, len, ERRNO;
+        }
+        
+        if (self.file != 0 && self.line > 0) {
+            syscall SYS_WRITE, STDERR, " at ", 4, ERRNO;
+            
+            int* len_ptr = (self.file - 8);
+            int len = *len_ptr;
+            syscall SYS_WRITE, STDERR, self.file, len, ERRNO;
+            
+            syscall SYS_WRITE, STDERR, ":", 1, ERRNO;
+            self._print_int(self.line);
+        }
+        
+        syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+        
+        // Print cause chain
+        if (self.cause != 0) {
+            syscall SYS_WRITE, STDERR, "Caused by: ", 11, ERRNO;
+            self.cause.print();
+        }
+    }
+    
+    // Helper: print integer
+    fn _print_int(self, n: int) -> void {
+        if (n == 0) {
+            syscall SYS_WRITE, STDERR, "0", 1, ERRNO;
+            return;
+        }
+        
+        bytes buffer[24];
+        int pos = 23;
+        buffer[pos] = 0;
+        pos = pos - 1;
+        
+        while (n > 0) {
+            int digit = n % 10;
+            buffer[pos] = 48 + digit;
+            n = n / 10;
+            pos = pos - 1;
+        }
+        
+        int len = 23 - pos - 1;
+        syscall SYS_WRITE, STDERR, buffer + pos + 1, len, ERRNO;
+    }
+}
+
+// =============================================================================
+// IOException Type
+// =============================================================================
+
+struct IOException {
+    base: Exception;
+    path: str*;
+}
+
+impl IOException {
+    constructor(message: str*, path: str*) {
+        self.base = Exception(message);
+        self.path = path;
+    }
+    
+    fn get_path(self) -> str* {
+        return self.path;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+    }
+}
+
+// =============================================================================
+// ValueError Type
+// =============================================================================
+
+struct ValueError {
+    base: Exception;
+    expected: str*;
+    actual: str*;
+}
+
+impl ValueError {
+    constructor(message: str*) {
+        self.base = Exception(message);
+        self.expected = "";
+        self.actual = "";
+    }
+    
+    fn with_values(message: str*, expected: str*, actual: str*) -> ValueError* {
+        ValueError* e = new ValueError(message);
+        e.expected = expected;
+        e.actual = actual;
+        return e;
+    }
+    
+    fn get_expected(self) -> str* {
+        return self.expected;
+    }
+    
+    fn get_actual(self) -> str* {
+        return self.actual;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+    }
+}
+
+// =============================================================================
+// IndexOutOfBoundsException Type
+// =============================================================================
+
+struct IndexOutOfBoundsException {
+    base: Exception;
+    index: int;
+    length: int;
+}
+
+impl IndexOutOfBoundsException {
+    constructor(index: int, length: int) -> IndexOutOfBoundsException* {
+        IndexOutOfBoundsException* e = new IndexOutOfBoundsException();
+        e.base = Exception("index out of bounds");
+        e.index = index;
+        e.length = length;
+        return e;
+    }
+    
+    fn get_index(self) -> int {
+        return self.index;
+    }
+    
+    fn get_length(self) -> int {
+        return self.length;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+        
+        syscall SYS_WRITE, STDERR, "  index: ", 9, ERRNO;
+        self._print_int(self.index);
+        syscall SYS_WRITE, STDERR, ", length: ", 10, ERRNO;
+        self._print_int(self.length);
+        syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+    }
+    
+    fn _print_int(self, n: int) -> void {
+        if (n == 0) {
+            syscall SYS_WRITE, STDERR, "0", 1, ERRNO;
+            return;
+        }
+        
+        bytes buffer[24];
+        int pos = 23;
+        int neg = n < 0;
+        
+        if (neg) { n = -n; }
+        
+        buffer[pos] = 0;
+        pos = pos - 1;
+        
+        while (n > 0) {
+            int digit = n % 10;
+            buffer[pos] = 48 + digit;
+            n = n / 10;
+            pos = pos - 1;
+        }
+        
+        if (neg) {
+            buffer[pos] = 45;
+            pos = pos - 1;
+        }
+        
+        int len = 23 - pos - 1;
+        syscall SYS_WRITE, STDERR, buffer + pos + 1, len, ERRNO;
+    }
+}
+
+// =============================================================================
+// NullPointerException Type
+// =============================================================================
+
+struct NullPointerException {
+    base: Exception;
+    var_name: str*;
+}
+
+impl NullPointerException {
+    constructor(var_name: str*) -> NullPointerException* {
+        NullPointerException* e = new NullPointerException();
+        e.base = Exception("null pointer exception");
+        e.var_name = var_name;
+        return e;
+    }
+    
+    fn get_var_name(self) -> str* {
+        return self.var_name;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+        
+        if (self.var_name != 0) {
+            syscall SYS_WRITE, STDERR, "  variable: ", 12, ERRNO;
+            int* len_ptr = (self.var_name - 8);
+            int len = *len_ptr;
+            syscall SYS_WRITE, STDERR, self.var_name, len, ERRNO;
+            syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+        }
+    }
+}
+
+// =============================================================================
+// MemoryException Type
+// =============================================================================
+
+struct MemoryException {
+    base: Exception;
+    requested_size: int;
+}
+
+impl MemoryException {
+    constructor(requested_size: int) -> MemoryException* {
+        MemoryException* e = new MemoryException();
+        e.base = Exception("memory allocation failed");
+        e.requested_size = requested_size;
+        return e;
+    }
+    
+    fn get_requested_size(self) -> int {
+        return self.requested_size;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+        
+        syscall SYS_WRITE, STDERR, "  requested size: ", 17, ERRNO;
+        self._print_int(self.requested_size);
+        syscall SYS_WRITE, STDERR, " bytes\n", 7, ERRNO;
+    }
+    
+    fn _print_int(self, n: int) -> void {
+        if (n == 0) {
+            syscall SYS_WRITE, STDERR, "0", 1, ERRNO;
+            return;
+        }
+        
+        bytes buffer[24];
+        int pos = 23;
+        buffer[pos] = 0;
+        pos = pos - 1;
+        
+        while (n > 0) {
+            int digit = n % 10;
+            buffer[pos] = 48 + digit;
+            n = n / 10;
+            pos = pos - 1;
+        }
+        
+        int len = 23 - pos - 1;
+        syscall SYS_WRITE, STDERR, buffer + pos + 1, len, ERRNO;
+    }
+}
+
+// =============================================================================
+// ArithmeticException Type
+// =============================================================================
+
+struct ArithmeticException {
+    base: Exception;
+    operation: str*;
+}
+
+impl ArithmeticException {
+    constructor(operation: str*) -> ArithmeticException* {
+        ArithmeticException* e = new ArithmeticException();
+        e.base = Exception("arithmetic error");
+        e.operation = operation;
+        return e;
+    }
+    
+    fn get_operation(self) -> str* {
+        return self.operation;
+    }
+    
+    fn print(self) -> void {
+        self.base.print();
+        
+        if (self.operation != 0) {
+            syscall SYS_WRITE, STDERR, "  operation: ", 13, ERRNO;
+            int* len_ptr = (self.operation - 8);
+            int len = *len_ptr;
+            syscall SYS_WRITE, STDERR, self.operation, len, ERRNO;
+            syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+        }
+    }
+}
+
+// =============================================================================
+// Result Type - For returning results or errors
+// =============================================================================
+
+struct Result<T, E> {
+    is_ok: bool;
+    value: T;
+    error: E;
+}
+
+impl Result<T, E> {
+    // Create Ok result
+    fn ok(value: T) -> Result<T, E> {
+        return Result<T, E>{ is_ok: true, value: value, error: 0 };
+    }
+    
+    // Create Err result
+    fn err(error: E) -> Result<T, E> {
+        return Result<T, E>{ is_ok: false, value: 0, error: error };
+    }
+    
+    // Check if Ok
+    fn is_ok(self) -> bool {
+        return self.is_ok;
+    }
+    
+    // Check if Err
+    fn is_err(self) -> bool {
+        return !self.is_ok;
+    }
+    
+    // Unwrap value (panics if Err)
+    fn unwrap(self) -> T {
+        if (!self.is_ok) {
+            panic("called unwrap on Err value");
+        }
+        return self.value;
+    }
+    
+    // Unwrap or default
+    fn unwrap_or(self, default: T) -> T {
+        if (self.is_ok) {
+            return self.value;
+        }
+        return default;
+    }
+    
+    // Get error (panics if Ok)
+    fn unwrap_err(self) -> E {
+        if (self.is_ok) {
+            panic("called unwrap_err on Ok value");
+        }
+        return self.error;
+    }
+    
+    // Map Ok value
+    fn map(self, fn_ptr: void*) -> Result<T, E> {
+        if (self.is_ok) {
+            // Would need function pointer support
+            return Result<T, E>.ok(self.value);
+        }
+        return Result<T, E>.err(self.error);
+    }
+}
+
+// =============================================================================
+// Panic and Assert Functions
+// =============================================================================
+
+// Panic with message
+fn panic(message: str*) -> void {
+    syscall SYS_WRITE, STDERR, "panic: ", 7, ERRNO;
+    
+    int* len_ptr = (message - 8);
+    int len = *len_ptr;
+    syscall SYS_WRITE, STDERR, message, len, ERRNO;
+    
+    syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+    
+    syscall SYS_EXIT, 1, ERRNO;
+}
+
+// Panic with message and location
+fn panic_at(message: str*, file: str*, line: int) -> void {
+    syscall SYS_WRITE, STDERR, "panic: ", 7, ERRNO;
+    
+    int* len_ptr = (message - 8);
+    int len = *len_ptr;
+    syscall SYS_WRITE, STDERR, message, len, ERRNO;
+    
+    syscall SYS_WRITE, STDERR, " at ", 4, ERRNO;
+    
+    len_ptr = (file - 8);
+    len = *len_ptr;
+    syscall SYS_WRITE, STDERR, file, len, ERRNO;
+    
+    syscall SYS_WRITE, STDERR, ":", 1, ERRNO;
+    print_int_stderr(line);
+    
+    syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+    
+    syscall SYS_EXIT, 1, ERRNO;
+}
+
+// Assert condition
+fn assert(condition: bool, message: str*) -> void {
+    if (!condition) {
+        syscall SYS_WRITE, STDERR, "assertion failed: ", 18, ERRNO;
+        
+        int* len_ptr = (message - 8);
+        int len = *len_ptr;
+        syscall SYS_WRITE, STDERR, message, len, ERRNO;
+        
+        syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+        
+        syscall SYS_EXIT, 1, ERRNO;
+    }
+}
+
+// Assert with location
+fn assert_at(condition: bool, message: str*, file: str*, line: int) -> void {
+    if (!condition) {
+        syscall SYS_WRITE, STDERR, "assertion failed: ", 18, ERRNO;
+        
+        int* len_ptr = (message - 8);
+        int len = *len_ptr;
+        syscall SYS_WRITE, STDERR, message, len, ERRNO;
+        
+        syscall SYS_WRITE, STDERR, " at ", 4, ERRNO;
+        
+        len_ptr = (file - 8);
+        len = *len_ptr;
+        syscall SYS_WRITE, STDERR, file, len, ERRNO;
+        
+        syscall SYS_WRITE, STDERR, ":", 1, ERRNO;
+        print_int_stderr(line);
+        
+        syscall SYS_WRITE, STDERR, "\n", 1, ERRNO;
+        
+        syscall SYS_EXIT, 1, ERRNO;
+    }
+}
+
+// Unreachable code marker
+fn unreachable(message: str*) -> void {
+    panic(message);
+}
+
+// Helper: print int to stderr
+fn print_int_stderr(n: int) -> void {
+    if (n == 0) {
+        syscall SYS_WRITE, STDERR, "0", 1, ERRNO;
+        return;
+    }
+    
+    bytes buffer[24];
+    int pos = 23;
+    int neg = n < 0;
+    
+    if (neg) { n = -n; }
+    
+    buffer[pos] = 0;
+    pos = pos - 1;
+    
+    while (n > 0) {
+        int digit = n % 10;
+        buffer[pos] = 48 + digit;
+        n = n / 10;
+        pos = pos - 1;
+    }
+    
+    if (neg) {
+        buffer[pos] = 45;
+        pos = pos - 1;
+    }
+    
+    int len = 23 - pos - 1;
+    syscall SYS_WRITE, STDERR, buffer + pos + 1, len, ERRNO;
+}
