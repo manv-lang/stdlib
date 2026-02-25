@@ -1,0 +1,45 @@
+impl String {
+    fn new() -> String {
+        return "";
+    }
+
+    fn from(str value) -> String {
+        return value;
+    }
+
+    fn len(self) -> uint {
+        return 0;
+    }
+
+    fn is_empty(self) -> bool {
+        return false;
+    }
+
+    fn as_str(self) -> str {
+        return self;
+    }
+
+    fn clear(self) -> void {
+        return;
+    }
+
+    fn push_str(self, str value) -> void {
+        return;
+    }
+
+    fn push_byte(self, byte value) -> void {
+        return;
+    }
+
+    fn clone(self) -> String {
+        return self;
+    }
+
+    fn reserve(self, uint additional) -> void {
+        return;
+    }
+
+    fn capacity(self) -> uint {
+        return 0;
+    }
+}

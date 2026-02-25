@@ -34,6 +34,32 @@
 // - Deque<T>      - Double-ended queue
 // - OrderedDict<K, V> - Map that preserves insertion order
 //
+// Memory Safety Rules:
+// --------------------
+// These collections are GC-backed and store values beyond the current scope.
+// Therefore, ArenaRef<T> values CANNOT be stored in these containers by default.
+//
+// COMPILE-TIME ENFORCEMENT:
+// The compiler will reject code like:
+//   Map<str*, ArenaRef<Foo>>* bad = Map.new();  // ERROR: ArenaRef in container
+//   Deque<ArenaRef<int>>* bad2 = Deque.new();   // ERROR: ArenaRef in container
+//
+// To override this restriction (at your own risk), use @allow_arena_ref:
+//   @allow_arena_ref
+//   fn risky_code() {
+//       Map<str*, ArenaRef<Foo>>* m = Map.new();  // Allowed but dangerous!
+//   }
+//
+// WHY THIS MATTERS:
+// ArenaRef<T> values are tied to a specific Arena and become invalid when
+// that Arena is freed or reset. Storing them in a container that outlives
+// the arena leads to use-after-free bugs.
+//
+// ALTERNATIVES:
+// - Promote ArenaRef to GCRef before storing: `arena_ref.promote(gc)`
+// - Use the value type directly if small enough
+// - Store the Arena alongside the ArenaRef with explicit lifetime management
+//
 // Examples:
 // ---------
 // // Map usage

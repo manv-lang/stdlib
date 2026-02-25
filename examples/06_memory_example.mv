@@ -1,0 +1,243 @@
+// =============================================================================
+// Example: std.mem Module
+// Description: Demonstrates memory management with Arena, GC, and Buffer
+// =============================================================================
+//
+// The mem module provides different memory management strategies:
+//
+// 1. Memory (alloc.mv) - Low-level memory operations
+//    - Memory.alloc(size)      - Allocate raw memory
+//    - Memory.free(ptr, size)  - Free memory
+//    - Memory.copy, zero, set  - Memory operations
+//
+// 2. Arena (arena.mv) - Bump allocator for scoped allocation
+//    - Arena.with_capacity(n)  - Create arena
+//    - arena.alloc(size)       - Allocate from arena
+//    - arena.reset()           - Reset (free all at once)
+//    - ArenaRef<T>             - Safe reference to arena object
+//
+// 3. GC (gc.mv) - Garbage collector for automatic management
+//    - GC.new()                - Create GC instance
+//    - gc.alloc(size, type_id) - Allocate GC-managed memory
+//    - gc.collect()            - Trigger collection
+//    - GCRef<T>                - Safe GC reference
+//
+// 4. Buffer (buffer.mv) - Dynamic byte buffer
+//    - Buffer.with_capacity(n) - Create buffer
+//    - buf.push(byte)          - Add byte
+//    - buf.append(data, len)   - Add multiple bytes
+//    - buf.get(index)          - Read byte
+// =============================================================================
+
+include "std/mem";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: Low-Level Memory Operations
+    // -------------------------------------------------------------------------
+    
+    // Allocate raw memory
+    void* raw_mem = Memory.alloc(1024);  // 1KB
+    
+    // Check allocation succeeded
+    if (raw_mem == 0) {
+        return 1;  // Allocation failed
+    }
+    
+    // Set memory to zero
+    Memory.zero(raw_mem, 1024);
+    
+    // Copy data
+    bytes data[4] = [1, 2, 3, 4];
+    Memory.copy(raw_mem, data, 4);
+    
+    // Verify copy
+    bytes first = ((bytes*)raw_mem)[0];
+    if (first != 1) {
+        return 2;
+    }
+    
+    // Free the memory
+    Memory.free(raw_mem, 1024);
+    
+    // -------------------------------------------------------------------------
+    // Example 2: Arena Allocator
+    // -------------------------------------------------------------------------
+    // Arena is great for temporary allocations that share a lifetime
+    
+    // Create an arena with 4KB capacity
+    Arena* arena = Arena.with_capacity(4096);
+    
+    // Allocate from arena (very fast - just bumps a pointer)
+    int* numbers = arena.alloc_array<int>(10);  // Array of 10 integers
+    
+    // Use the allocated memory
+    numbers[0] = 100;
+    numbers[1] = 200;
+    
+    if (numbers[0] != 100) {
+        return 3;
+    }
+    
+    // Save point - can restore to this state
+    int save = arena.save_point();
+    
+    // More allocations
+    float* temps = arena.alloc_array<float>(5);
+    temps[0] = 36.5;
+    
+    // Check arena usage
+    int used = arena.used();
+    if (used <= 0) {
+        return 4;
+    }
+    
+    // Restore to save point (frees temps but keeps numbers)
+    arena.restore(save);
+    
+    // numbers is still valid
+    if (numbers[0] != 100) {
+        return 5;
+    }
+    
+    // Reset arena - frees all allocations at once
+    arena.reset();
+    
+    // Check arena is empty
+    if (!arena.is_empty()) {
+        return 6;
+    }
+    
+    // Free the arena itself
+    arena.free();
+    
+    // -------------------------------------------------------------------------
+    // Example 3: Dynamic Buffer
+    // -------------------------------------------------------------------------
+    // Buffer is a growable byte array
+    
+    // Create a buffer
+    Buffer* buf = Buffer.with_capacity(16);
+    
+    // Push individual bytes
+    buf.push(72);   // 'H'
+    buf.push(105);  // 'i'
+    buf.push(33);   // '!'
+    
+    // Check length
+    if (buf.len() != 3) {
+        return 7;
+    }
+    
+    // Read bytes
+    int first_byte = buf.get(0);  // 72
+    if (first_byte != 72) {
+        return 8;
+    }
+    
+    // Append multiple bytes
+    bytes more[5] = [87, 111, 114, 108, 100];  // "World"
+    buf.append(more, 5);
+    
+    if (buf.len() != 8) {
+        return 9;
+    }
+    
+    // Buffer auto-grows if needed
+    int i = 0;
+    while (i < 100) {
+        buf.push(i % 256);
+        i = i + 1;
+    }
+    
+    if (buf.len() != 108) {
+        return 10;
+    }
+    
+    // Clear buffer
+    buf.clear();
+    
+    if (!buf.is_empty()) {
+        return 11;
+    }
+    
+    // Free buffer
+    buf.free();
+    
+    // -------------------------------------------------------------------------
+    // Example 4: Practical Pattern - Building a String Buffer
+    // -------------------------------------------------------------------------
+    
+    Buffer* str_buf = Buffer.with_capacity(32);
+    
+    // Build a string byte by byte
+    str_buf.push(72);   // H
+    str_buf.push(101);  // e
+    str_buf.push(108);  // l
+    str_buf.push(108);  // l
+    str_buf.push(111);  // o
+    
+    // Get as string pointer
+    str result = (str)str_buf.as_ptr();
+    
+    // Verify length
+    if (str_buf.len() != 5) {
+        return 12;
+    }
+    
+    str_buf.free();
+    
+    // -------------------------------------------------------------------------
+    // Example 5: Practical Pattern - Temporary Scratch Pad
+    // -------------------------------------------------------------------------
+    
+    // Create arena for temporary calculations
+    Arena* scratch = Arena.growable(1024);
+    
+    // Do some temporary work
+    int* temp_values = scratch.alloc_array<int>(100);
+    
+    int idx = 0;
+    while (idx < 100) {
+        temp_values[idx] = idx * 2;
+        idx = idx + 1;
+    }
+    
+    // Calculate sum
+    int sum = 0;
+    idx = 0;
+    while (idx < 100) {
+        sum = sum + temp_values[idx];
+        idx = idx + 1;
+    }
+    
+    // Expected: sum of 0, 2, 4, ..., 198 = 9900
+    if (sum != 9900) {
+        return 13;
+    }
+    
+    // All temporary memory freed at once
+    scratch.free();
+    
+    // -------------------------------------------------------------------------
+    // Example 6: Memory Utilities
+    // -------------------------------------------------------------------------
+    
+    // Align a size
+    int aligned = 100;
+    aligned = (aligned + 15) & ~15;  // Align to 16 bytes
+    // aligned = 112
+    
+    if (aligned != 112) {
+        return 14;
+    }
+    
+    // Get page size
+    int page = Memory.page_size();  // Usually 4096
+    
+    if (page != 4096) {
+        return 15;
+    }
+    
+    return 0;
+}

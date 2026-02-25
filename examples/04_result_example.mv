@@ -1,0 +1,189 @@
+// =============================================================================
+// Example: std.result Module
+// Description: Demonstrates the Result<T, E> type for error handling
+// =============================================================================
+//
+// The Result type represents either Ok(value) or Err(error). It's useful for:
+// - Functions that can fail with specific error types
+// - Explicit error handling without exceptions
+// - Chaining operations that may fail
+//
+// Usage:
+//   include "std/result";
+//
+// Creating Results:
+//   Result<T, E>.ok(value)   - Create Ok with a value
+//   Result<T, E>.err(error)  - Create Err with an error
+//   ok<T, E>(value)          - Convenience function
+//   err<T, E>(error)         - Convenience function
+//
+// Querying:
+//   res.is_ok()     - Returns true if success
+//   res.is_err()    - Returns true if error
+//
+// Extracting Values:
+//   res.unwrap()          - Get value (panics if Err)
+//   res.unwrap_or(default) - Get value or default if Err
+//   res.unwrap_err()      - Get error (panics if Ok)
+//   res.expect(msg)       - Get value (panics with msg if Err)
+// =============================================================================
+
+include "std/result";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: Creating Results
+    // -------------------------------------------------------------------------
+    // Create Ok with a success value
+    Result<int, str> success = Result<int, str>.ok(42);
+    
+    // Create Err with an error
+    Result<int, str> failure = Result<int, str>.err("Something went wrong");
+    
+    // Verify is_ok and is_err
+    if (!success.is_ok()) {
+        return 1;
+    }
+    if (!failure.is_err()) {
+        return 2;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 2: Unwrapping Results
+    // -------------------------------------------------------------------------
+    // unwrap() gets the value or panics if Err
+    int value = success.unwrap();  // value = 42
+    
+    if (value != 42) {
+        return 3;
+    }
+    
+    // unwrap_err() gets the error (panics if Ok)
+    str error = failure.unwrap_err();  // error = "Something went wrong"
+    
+    // -------------------------------------------------------------------------
+    // Example 3: Practical Use - Division with Error
+    // -------------------------------------------------------------------------
+    // Division can fail with division by zero
+    
+    int numerator = 10;
+    int denominator = 0;  // This will cause an error
+    
+    Result<int, str> div_result;
+    if (denominator == 0) {
+        div_result = Result<int, str>.err("Division by zero");
+    } else {
+        div_result = Result<int, str>.ok(numerator / denominator);
+    }
+    
+    // Handle the result
+    if (div_result.is_err()) {
+        // Handle error - in this case, use a default
+        // Error was expected for division by zero
+    } else {
+        // This branch won't execute
+        return 100;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 4: Using unwrap_or for Defaults
+    // -------------------------------------------------------------------------
+    
+    // Success case - returns the actual value
+    Result<int, str> ok_result = Result<int, str>.ok(100);
+    int ok_value = ok_result.unwrap_or(0);  // ok_value = 100
+    
+    if (ok_value != 100) {
+        return 4;
+    }
+    
+    // Error case - returns the default
+    Result<int, str> err_result = Result<int, str>.err("Failed");
+    int err_value = err_result.unwrap_or(0);  // err_value = 0
+    
+    if (err_value != 0) {
+        return 5;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 5: Validation Pattern
+    // -------------------------------------------------------------------------
+    // Validate input and return Result
+    
+    int age = 25;
+    Result<int, str> age_result;
+    
+    if (age < 0) {
+        age_result = Result<int, str>.err("Age cannot be negative");
+    } else if (age > 150) {
+        age_result = Result<int, str>.err("Age seems unrealistic");
+    } else {
+        age_result = Result<int, str>.ok(age);
+    }
+    
+    // Use the validated result
+    int valid_age = age_result.unwrap_or(0);
+    
+    if (valid_age != 25) {
+        return 6;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 6: Error Codes Instead of Strings
+    // -------------------------------------------------------------------------
+    // Using integer error codes can be more efficient
+    
+    Result<int, int> compute_result;
+    
+    // Simulate an operation that might fail
+    int input = 5;
+    if (input < 0) {
+        compute_result = Result<int, int>.err(1);  // Error code 1: negative input
+    } else if (input > 10) {
+        compute_result = Result<int, int>.err(2);  // Error code 2: input too large
+    } else {
+        compute_result = Result<int, int>.ok(input * 2);
+    }
+    
+    // Handle based on error code
+    if (compute_result.is_ok()) {
+        int computed = compute_result.unwrap();  // computed = 10
+        if (computed != 10) {
+            return 7;
+        }
+    } else {
+        // Handle specific error codes
+        int error_code = compute_result.unwrap_err();
+        // Would handle different error codes here
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 7: Chaining Results
+    // -------------------------------------------------------------------------
+    // Multiple operations that can fail
+    
+    // Step 1: Validate input
+    int step1_input = 10;
+    Result<int, str> step1;
+    if (step1_input > 0) {
+        step1 = Result<int, str>.ok(step1_input);
+    } else {
+        step1 = Result<int, str>.err("Input must be positive");
+    }
+    
+    // Step 2: Process (only if step 1 succeeded)
+    int final_result;
+    if (step1.is_ok()) {
+        int step1_value = step1.unwrap();
+        // Do something with the value
+        final_result = step1_value * 2;
+    } else {
+        final_result = 0;
+    }
+    
+    if (final_result != 20) {
+        return 8;
+    }
+    
+    return 0;
+}

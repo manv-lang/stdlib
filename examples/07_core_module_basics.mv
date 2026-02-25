@@ -1,0 +1,20 @@
+// std/core module example
+// Demonstrates core helper functions through std package modules.
+
+include "std/core";
+
+fn main() -> int {
+    int a = abs(-42);
+    int b = max(6, 9);
+    int c = min(-2, 3);
+    int d = clamp(a + b + c, 0, 64);
+
+    float x = abs_f(-2.5);
+    float y = clamp_f(x, 0.0, 2.0);
+
+    if (y == 2.0) {
+        return d;
+    }
+
+    return 1;
+}

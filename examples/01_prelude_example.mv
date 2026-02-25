@@ -1,0 +1,97 @@
+// =============================================================================
+// Example: std.prelude Module
+// Description: Demonstrates type aliases and constants provided by prelude
+// =============================================================================
+//
+// The prelude module provides convenient type aliases and commonly used
+// constants. It is NOT auto-imported - you must explicitly include it.
+//
+// Usage:
+//   include "std/prelude";
+//
+// Type Aliases:
+//   i32     - 32-bit signed integer (alias for int)
+//   isize   - Platform-dependent size type
+//   f32     - 32-bit floating point (alias for float)
+//   f64     - 64-bit floating point (alias for float)
+//   u8      - Unsigned 8-bit integer (alias for byte)
+//   string  - String type (alias for str)
+//
+// Constants:
+//   PI      - Mathematical constant π (3.14159...)
+//   E       - Euler's number e (2.71828...)
+//   TAU     - Circle constant τ (6.28318... = 2π)
+// =============================================================================
+
+include "std/prelude";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: Using Type Aliases
+    // -------------------------------------------------------------------------
+    // i32 is an alias for int - useful for documenting intent
+    i32 counter = 0;
+    counter = counter + 1;
+    
+    // isize represents a size or index
+    isize buffer_size = 1024;
+    
+    // f32 and f64 for floating point numbers
+    f32 temperature = 36.5;
+    f64 precise_value = 3.14159265358979;
+    
+    // u8 for byte values (0-255)
+    u8 byte_value = 255;
+    
+    // string for text - clearer than str
+    string greeting = "Hello, World!";
+    
+    // -------------------------------------------------------------------------
+    // Example 2: Using Mathematical Constants
+    // -------------------------------------------------------------------------
+    // Calculate circle area: A = π * r²
+    f32 radius = 5.0;
+    f32 area = PI * radius * radius;
+    
+    // Calculate circle circumference: C = τ * r (or 2π * r)
+    f32 circumference = TAU * radius;
+    
+    // Calculate exponential growth: e^x
+    f32 x = 2.0;
+    // Note: would need exp() function from math module for actual computation
+    
+    // -------------------------------------------------------------------------
+    // Example 3: Combining with Core Functions
+    // -------------------------------------------------------------------------
+    // Use prelude types with core functions
+    i32 abs_value = -42;
+    // Note: would need abs() from core module
+    
+    // -------------------------------------------------------------------------
+    // Verification
+    // -------------------------------------------------------------------------
+    // Verify our values work correctly
+    if (counter != 1) {
+        return 1;
+    }
+    
+    if (buffer_size != 1024) {
+        return 2;
+    }
+    
+    if (byte_value != 255) {
+        return 3;
+    }
+    
+    // Check PI is approximately correct
+    if (PI < 3.0 || PI > 4.0) {
+        return 4;
+    }
+    
+    // Check TAU is approximately 2*PI
+    if (TAU < 6.0 || TAU > 7.0) {
+        return 5;
+    }
+    
+    return 0;
+}

@@ -1,0 +1,83 @@
+// =============================================================================
+// std.assert (package entry)
+// Parser-safe assertion helpers for current compiler surface.
+// =============================================================================
+
+fn panic(message: int) -> void {
+    int err = 0;
+    syscall 60, 1, err;
+}
+
+fn panicf(format: int, value: int) -> void {
+    int err = 0;
+    syscall 60, 1, err;
+}
+
+fn panic_at(message: int, file: int, line: int) -> void {
+    int err = 0;
+    syscall 60, 1, err;
+}
+
+fn assert(condition: int, message: int) -> void {
+    if (condition == 1) {
+        return;
+    }
+    panic(message);
+}
+
+fn assert_true(condition: int, message: int) -> void {
+    if (condition == 1) {
+        return;
+    }
+    panic(message);
+}
+
+fn assert_false(condition: int, message: int) -> void {
+    if (condition == 1) {
+        panic(message);
+    }
+}
+
+fn assert_eq(expected: int, actual: int, message: int) -> void {
+    if (expected == actual) {
+        return;
+    }
+    panic(message);
+}
+
+fn assert_ne(expected: int, actual: int, message: int) -> void {
+    if (expected != actual) {
+        return;
+    }
+    panic(message);
+}
+
+fn assert_null(ptr: int, message: int) -> void {
+    if (ptr == 0) {
+        return;
+    }
+    panic(message);
+}
+
+fn assert_not_null(ptr: int, message: int) -> void {
+    if (ptr != 0) {
+        return;
+    }
+    panic(message);
+}
+
+fn debug_assert(condition: int, message: int) -> void {
+    assert(condition, message);
+}
+
+fn unreachable(message: int) -> void {
+    panic(message);
+}
+
+fn todo(message: int) -> void {
+    panic(message);
+}
+
+fn unimplemented(message: int) -> void {
+    panic(message);
+}

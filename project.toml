@@ -19,6 +19,6 @@ emit = "bin"
 
 
 [toolchain]
-stdlib = "/usr/lib/manv/stdlib"
+stdlib = "/usr/lib/manv/std"
 packages = "./.manv/packages"
 cache = "./.manv/cache"

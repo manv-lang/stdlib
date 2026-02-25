@@ -30,7 +30,7 @@
 // Types:
 // -------
 // - TestSuite    - Collection of tests
-// - TestRunner   - Test runner
+// - E2ETestRunner   - Test runner
 // - TestResult   - Result of a single test
 // - Assert       - Assertion utilities
 //

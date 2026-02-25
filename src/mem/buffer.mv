@@ -1,0 +1,366 @@
+// =============================================================================
+// std.mem.buffer
+// Dynamic byte buffer with full API.
+// =============================================================================
+
+include "std/mem/alloc";
+
+// -----------------------------------------------------------------------------
+// Buffer Type - Dynamic byte buffer
+// -----------------------------------------------------------------------------
+
+struct Buffer {
+    data: void*;
+    length: int;
+    capacity: int;
+    growable: bool;
+}
+
+impl Buffer {
+    // -------------------------------------------------------------------------
+    // Initialization
+    // -------------------------------------------------------------------------
+    
+    constructor() {
+        self.data = 0;
+        self.length = 0;
+        self.capacity = 0;
+        self.growable = true;
+    }
+    
+    fn with_capacity(capacity: int) -> Buffer* {
+        Buffer* buf = new Buffer();
+        buf.data = Memory.alloc(capacity);
+        buf.capacity = capacity;
+        buf.length = 0;
+        buf.growable = true;
+        return buf;
+    }
+    
+    fn from_bytes(data: void*, len: int) -> Buffer* {
+        Buffer* buf = Buffer.with_capacity(len);
+        Memory.copy(buf.data, data, len);
+        buf.length = len;
+        return buf;
+    }
+    
+    // Create a fixed-size buffer (non-growable)
+    fn fixed(capacity: int) -> Buffer* {
+        Buffer* buf = Buffer.with_capacity(capacity);
+        buf.growable = false;
+        return buf;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Properties
+    // -------------------------------------------------------------------------
+    
+    fn len(self) -> int {
+        return self.length;
+    }
+    
+    fn capacity(self) -> int {
+        return self.capacity;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.length == 0;
+    }
+    
+    fn is_full(self) -> bool {
+        return self.length >= self.capacity;
+    }
+    
+    fn remaining(self) -> int {
+        return self.capacity - self.length;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Element Access
+    // -------------------------------------------------------------------------
+    
+    fn get(self, index: int) -> int {
+        if (index < 0 || index >= self.length) {
+            return -1;
+        }
+        return ((bytes*)self.data)[index];
+    }
+    
+    fn set(self, index: int, value: int) -> void {
+        if (index >= 0 && index < self.length) {
+            ((bytes*)self.data)[index] = value;
+        }
+    }
+    
+    // Get as pointer
+    fn as_ptr(self) -> void* {
+        return self.data;
+    }
+    
+    // Get slice as pointer
+    fn slice(self, start: int, len: int) -> void* {
+        if (start < 0 || start + len > self.length) {
+            return 0;
+        }
+        return self.data + start;
+    }
+    
+    // Get as typed pointer
+    fn as_typed<T>(self) -> T* {
+        return (T*)self.data;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Modification
+    // -------------------------------------------------------------------------
+    
+    fn push(self, byte: int) -> void {
+        if (self.length >= self.capacity) {
+            if (self.growable) {
+                self._grow(self.capacity == 0 ? 16 : self.capacity * 2);
+            } else {
+                return;  // Cannot grow
+            }
+        }
+        
+        ((bytes*)self.data)[self.length] = byte;
+        self.length = self.length + 1;
+    }
+    
+    fn pop(self) -> int {
+        if (self.length == 0) {
+            return -1;
+        }
+        
+        self.length = self.length - 1;
+        return ((bytes*)self.data)[self.length];
+    }
+    
+    fn append(self, data: void*, len: int) -> void {
+        // Ensure capacity
+        while (self.length + len > self.capacity) {
+            if (self.growable) {
+                self._grow(self.capacity * 2);
+            } else {
+                return;  // Cannot grow
+            }
+        }
+        
+        Memory.copy(self.data + self.length, data, len);
+        self.length = self.length + len;
+    }
+    
+    fn append_buffer(self, other: Buffer*) -> void {
+        self.append(other.data, other.length);
+    }
+    
+    fn clear(self) -> void {
+        self.length = 0;
+    }
+    
+    fn truncate(self, len: int) -> void {
+        if (len >= 0 && len < self.length) {
+            self.length = len;
+        }
+    }
+    
+    // -------------------------------------------------------------------------
+    // Search
+    // -------------------------------------------------------------------------
+    
+    fn find(self, byte: int) -> int {
+        int i = 0;
+        while (i < self.length) {
+            if (((bytes*)self.data)[i] == byte) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+    
+    fn find_slice(self, needle: void*, len: int) -> int {
+        if (len > self.length) {
+            return -1;
+        }
+        
+        int i = 0;
+        while (i <= self.length - len) {
+            if (Memory.compare(self.data + i, needle, len) == 0) {
+                return i;
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+    
+    fn count(self, byte: int) -> int {
+        int count = 0;
+        int i = 0;
+        while (i < self.length) {
+            if (((bytes*)self.data)[i] == byte) {
+                count = count + 1;
+            }
+            i = i + 1;
+        }
+        return count;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Transformation
+    // -------------------------------------------------------------------------
+    
+    fn reverse(self) -> void {
+        int i = 0;
+        int j = self.length - 1;
+        while (i < j) {
+            int tmp = ((bytes*)self.data)[i];
+            ((bytes*)self.data)[i] = ((bytes*)self.data)[j];
+            ((bytes*)self.data)[j] = tmp;
+            i = i + 1;
+            j = j - 1;
+        }
+    }
+    
+    fn fill(self, value: int) -> void {
+        Memory.set(self.data, value, self.length);
+    }
+    
+    fn fill_range(self, start: int, len: int, value: int) -> void {
+        if (start < 0 || start + len > self.length) {
+            return;
+        }
+        Memory.set(self.data + start, value, len);
+    }
+    
+    // -------------------------------------------------------------------------
+    // Comparison
+    // -------------------------------------------------------------------------
+    
+    fn equals(self, other: Buffer*) -> bool {
+        if (self.length != other.length) {
+            return false;
+        }
+        return Memory.compare(self.data, other.data, self.length) == 0;
+    }
+    
+    fn equals_bytes(self, data: void*, len: int) -> bool {
+        if (self.length != len) {
+            return false;
+        }
+        return Memory.compare(self.data, data, len) == 0;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Growth
+    // -------------------------------------------------------------------------
+    
+    fn reserve(self, additional: int) -> void {
+        if (self.length + additional > self.capacity) {
+            self._grow(self.length + additional);
+        }
+    }
+    
+    fn resize(self, new_len: int) -> void {
+        if (new_len > self.capacity) {
+            if self.growable {
+                self._grow(new_len);
+            } else {
+                return;
+            }
+        }
+        self.length = new_len;
+    }
+    
+    fn _grow(self, new_capacity: int) -> void {
+        void* new_data = Memory.alloc(new_capacity);
+        
+        if (self.data != 0) {
+            Memory.copy(new_data, self.data, self.length);
+            Memory.free(self.data, self.capacity);
+        }
+        
+        self.data = new_data;
+        self.capacity = new_capacity;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Memory Management
+    // -------------------------------------------------------------------------
+    
+    fn free(self) -> void {
+        if (self.data != 0) {
+            Memory.free(self.data, self.capacity);
+            self.data = 0;
+            self.length = 0;
+            self.capacity = 0;
+        }
+    }
+    
+    // Transfer ownership (returns data pointer, clears buffer)
+    fn into_ptr(self) -> void* {
+        void* ptr = self.data;
+        self.data = 0;
+        self.length = 0;
+        self.capacity = 0;
+        return ptr;
+    }
+    
+    // Clone buffer
+    fn clone(self) -> Buffer* {
+        Buffer* copy = Buffer.with_capacity(self.length);
+        Memory.copy(copy.data, self.data, self.length);
+        copy.length = self.length;
+        return copy;
+    }
+    
+    // -------------------------------------------------------------------------
+    // I/O Helpers
+    // -------------------------------------------------------------------------
+    
+    // Write integer as little-endian
+    fn write_u32_le(self, value: int, offset: int) -> void {
+        if (offset + 4 > self.length) {
+            return;
+        }
+        ((int*)self.data)[offset / 4] = value;
+    }
+    
+    // Read integer as little-endian
+    fn read_u32_le(self, offset: int) -> int {
+        if (offset + 4 > self.length) {
+            return 0;
+        }
+        return ((int*)self.data)[offset / 4];
+    }
+    
+    // Write byte string
+    fn write_str(self, str: bytes*, len: int) -> int {
+        if (self.length + len > self.capacity) {
+            if self.growable {
+                self._grow(self.length + len);
+            } else {
+                return -1;
+            }
+        }
+        Memory.copy(self.data + self.length, str, len);
+        self.length = self.length + len;
+        return self.length - len;  // Return offset where written
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Convenience Functions
+// -----------------------------------------------------------------------------
+
+fn buffer_new() -> Buffer* {
+    return Buffer.with_capacity(16);
+}
+
+fn buffer_with_capacity(capacity: int) -> Buffer* {
+    return Buffer.with_capacity(capacity);
+}
+
+fn buffer_from_bytes(data: void*, len: int) -> Buffer* {
+    return Buffer.from_bytes(data, len);
+}

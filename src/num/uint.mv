@@ -1,0 +1,90 @@
+impl usize {
+    fn clamp(self, uint min_value, uint max_value) -> uint {
+        if (self < min_value) {
+            return min_value;
+        }
+        if (self > max_value) {
+            return max_value;
+        }
+        return self;
+    }
+
+    fn min(self, uint other) -> uint {
+        if (self < other) {
+            return self;
+        }
+        return other;
+    }
+
+    fn max(self, uint other) -> uint {
+        if (self > other) {
+            return self;
+        }
+        return other;
+    }
+
+    fn pow(self, uint exp) -> uint {
+        uint result = 1;
+        uint i = 0;
+        while (i < exp) {
+            result = result * self;
+            i = i + 1;
+        }
+        return result;
+    }
+
+    fn checked_add(self, uint other) -> Option<uint> {
+        return option_none_uint();
+    }
+
+    fn checked_sub(self, uint other) -> Option<uint> {
+        return option_none_uint();
+    }
+
+    fn checked_mul(self, uint other) -> Option<uint> {
+        return option_none_uint();
+    }
+
+    fn checked_div(self, uint other) -> Option<uint> {
+        if (other == 0) {
+            return option_none_uint();
+        }
+        return option_none_uint();
+    }
+
+    fn saturating_add(self, uint other) -> uint {
+        return self + other;
+    }
+
+    fn saturating_sub(self, uint other) -> uint {
+        return self - other;
+    }
+
+    fn saturating_mul(self, uint other) -> uint {
+        return self * other;
+    }
+
+    fn wrapping_add(self, uint other) -> uint {
+        return self + other;
+    }
+
+    fn wrapping_sub(self, uint other) -> uint {
+        return self - other;
+    }
+
+    fn wrapping_mul(self, uint other) -> uint {
+        return self * other;
+    }
+
+    fn next_power_of_two(self) -> uint {
+        return self;
+    }
+
+    fn is_power_of_two(self) -> bool {
+        return false;
+    }
+}
+
+fn option_none_uint() -> Option<uint> {
+    return 0;
+}

@@ -1,0 +1,174 @@
+// =============================================================================
+// Example: std.option Module
+// Description: Demonstrates the Option<T> type for representing optional values
+// =============================================================================
+//
+// The Option type represents either Some(value) or None. It's useful for:
+// - Functions that may not return a value
+// - Representing nullable values safely
+// - Avoiding null pointer exceptions
+//
+// Usage:
+//   include "std/option";
+//
+// Creating Options:
+//   Option<T>.some(value)  - Create Some with a value
+//   Option<T>.none()       - Create None (no value)
+//   some<T>(value)         - Convenience function
+//   none<T>()              - Convenience function
+//
+// Querying:
+//   opt.is_some()    - Returns true if has value
+//   opt.is_none()    - Returns true if no value
+//
+// Extracting Values:
+//   opt.unwrap()           - Get value (panics if None)
+//   opt.unwrap_or(default) - Get value or default if None
+//   opt.expect(msg)        - Get value (panics with msg if None)
+// =============================================================================
+
+include "std/option";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: Creating Options
+    // -------------------------------------------------------------------------
+    // Create Some with a value
+    Option<int> some_num = Option<int>.some(42);
+    
+    // Create None (no value)
+    Option<int> no_num = Option<int>.none();
+    
+    // Verify is_some and is_none
+    if (!some_num.is_some()) {
+        return 1;
+    }
+    if (!no_num.is_none()) {
+        return 2;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 2: Unwrapping Values
+    // -------------------------------------------------------------------------
+    // unwrap() gets the value or panics if None
+    int value = some_num.unwrap();  // value = 42
+    
+    if (value != 42) {
+        return 3;
+    }
+    
+    // unwrap_or() provides a default for None
+    int with_default = no_num.unwrap_or(0);  // with_default = 0
+    
+    if (with_default != 0) {
+        return 4;
+    }
+    
+    // unwrap_or with Some returns the actual value
+    int from_some = some_num.unwrap_or(99);  // from_some = 42
+    
+    if (from_some != 42) {
+        return 5;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 3: Practical Use - Safe Division
+    // -------------------------------------------------------------------------
+    // Division by zero is undefined, so return Option
+    
+    // Simulate a safe_divide function
+    int numerator = 10;
+    int denominator = 2;
+    
+    Option<int> safe_result;
+    if (denominator == 0) {
+        safe_result = Option<int>.none();
+    } else {
+        safe_result = Option<int>.some(numerator / denominator);
+    }
+    
+    // Use the result safely
+    int result = safe_result.unwrap_or(0);  // result = 5
+    
+    if (result != 5) {
+        return 6;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 4: Practical Use - Finding Values
+    // -------------------------------------------------------------------------
+    // Simulate finding a value in a "collection"
+    
+    // A simple lookup simulation
+    int key_to_find = 3;
+    int found_value;
+    bool was_found = false;
+    
+    // Simulated lookup: key 3 maps to value 30
+    if (key_to_find == 3) {
+        found_value = 30;
+        was_found = true;
+    }
+    
+    // Convert to Option
+    Option<int> lookup_result;
+    if (was_found) {
+        lookup_result = Option<int>.some(found_value);
+    } else {
+        lookup_result = Option<int>.none();
+    }
+    
+    // Use the lookup result
+    int final_value = lookup_result.unwrap_or(-1);  // final_value = 30
+    
+    if (final_value != 30) {
+        return 7;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 5: Chaining Operations
+    // -------------------------------------------------------------------------
+    // Multiple Option-returning operations
+    
+    // Step 1: Parse string to int (simulated)
+    Option<int> parsed = Option<int>.some(25);
+    
+    // Step 2: Use parsed value or default
+    int number = parsed.unwrap_or(0);
+    
+    // Step 3: Validate range
+    Option<int> validated;
+    if (number >= 0 && number <= 100) {
+        validated = Option<int>.some(number);
+    } else {
+        validated = Option<int>.none();
+    }
+    
+    // Final result
+    int final_num = validated.unwrap_or(-1);  // final_num = 25
+    
+    if (final_num != 25) {
+        return 8;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 6: Working with String Options
+    // -------------------------------------------------------------------------
+    
+    Option<str> maybe_name = Option<str>.some("Alice");
+    Option<str> no_name = Option<str>.none();
+    
+    // Check and use
+    if (maybe_name.is_some()) {
+        // Would access the name here
+    }
+    
+    // Get with default
+    str name = maybe_name.unwrap_or("Unknown");  // name = "Alice"
+    str default_name = no_name.unwrap_or("Unknown");  // default_name = "Unknown"
+    
+    // Verify string defaults work (checking length since we can't compare strings directly)
+    // The important thing is the pattern works
+    
+    return 0;
+}

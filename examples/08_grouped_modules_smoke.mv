@@ -1,0 +1,19 @@
+// grouped std module example
+// Demonstrates grouped modules exported by std:
+// - std/num
+// - std/string
+// - std/collections
+
+include "std/num";
+include "std/string";
+include "std/collections";
+
+fn main() -> int {
+    int score = 0;
+
+    // Imports resolved through grouped modules.
+    score = score + 1;
+    score = score + 1;
+
+    return score;
+}

@@ -1,0 +1,261 @@
+// =============================================================================
+// std.mem.arena
+// Arena allocator for deterministic memory management.
+// =============================================================================
+
+include "std/mem/alloc";
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+int ARENA_DEFAULT_CAPACITY = 4096;
+int ARENA_DEFAULT_ALIGNMENT = 16;
+
+// -----------------------------------------------------------------------------
+// Arena Type - Bump allocator
+// -----------------------------------------------------------------------------
+
+struct Arena {
+    base: void*;       // Base address of allocated memory
+    offset: int;       // Current offset from base
+    capacity: int;     // Total capacity
+    growable: bool;    // Whether arena can grow
+    id: int;           // Unique arena ID for safety
+}
+
+// Global arena ID counter
+int ARENA_ID_COUNTER = 0;
+
+impl Arena {
+    // Create a new arena with default capacity
+    constructor() {
+        self.base = Memory.alloc(ARENA_DEFAULT_CAPACITY);
+        self.offset = 0;
+        self.capacity = ARENA_DEFAULT_CAPACITY;
+        self.growable = true;
+        ARENA_ID_COUNTER = ARENA_ID_COUNTER + 1;
+        self.id = ARENA_ID_COUNTER;
+    }
+    
+    // Create arena with specific capacity
+    fn with_capacity(capacity: int) -> Arena* {
+        Arena* arena = new Arena();
+        arena.base = Memory.alloc(capacity);
+        arena.capacity = capacity;
+        arena.growable = false;
+        ARENA_ID_COUNTER = ARENA_ID_COUNTER + 1;
+        arena.id = ARENA_ID_COUNTER;
+        return arena;
+    }
+    
+    // Create growable arena
+    fn growable(initial_capacity: int) -> Arena* {
+        Arena* arena = new Arena();
+        arena.base = Memory.alloc(initial_capacity);
+        arena.capacity = initial_capacity;
+        arena.growable = true;
+        ARENA_ID_COUNTER = ARENA_ID_COUNTER + 1;
+        arena.id = ARENA_ID_COUNTER;
+        return arena;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Core Allocation
+    // -------------------------------------------------------------------------
+    
+    // Allocate from arena
+    fn alloc(self, size: int) -> void* {
+        return self.alloc_aligned(size, 8);
+    }
+    
+    // Allocate aligned from arena
+    fn alloc_aligned(self, size: int, alignment: int) -> void* {
+        // Align current offset
+        int aligned_offset = (self.offset + alignment - 1) & ~(alignment - 1);
+        
+        // Check if we have space
+        if (aligned_offset + size > self.capacity) {
+            if (self.growable) {
+                self._grow(self.capacity + size);
+            } else {
+                return 0;
+            }
+        }
+        
+        // Allocate
+        void* ptr = self.base + aligned_offset;
+        self.offset = aligned_offset + size;
+        
+        return ptr;
+    }
+    
+    // Allocate typed object
+    fn alloc_typed<T>(self) -> T* {
+        return self.alloc_aligned(sizeof(T), alignof(T));
+    }
+    
+    // Allocate array
+    fn alloc_array<T>(self, count: int) -> T* {
+        int size = sizeof(T) * count;
+        return self.alloc_aligned(size, alignof(T));
+    }
+    
+    // Allocate zeroed memory
+    fn alloc_zeroed(self, size: int) -> void* {
+        void* ptr = self.alloc(size);
+        if (ptr != 0) {
+            Memory.zero(ptr, size);
+        }
+        return ptr;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Memory Management
+    // -------------------------------------------------------------------------
+    
+    // Reset arena (keep memory, reset offset)
+    fn reset(self) -> void {
+        self.offset = 0;
+    }
+    
+    // Free arena
+    fn free(self) -> void {
+        if (self.base != 0) {
+            Memory.free(self.base, self.capacity);
+            self.base = 0;
+            self.offset = 0;
+            self.capacity = 0;
+        }
+    }
+    
+    // -------------------------------------------------------------------------
+    // Save/Restore Points
+    // -------------------------------------------------------------------------
+    
+    // Create a save point
+    fn save_point(self) -> int {
+        return self.offset;
+    }
+    
+    // Restore to save point
+    fn restore(self, save_point: int) -> void {
+        if (save_point >= 0 && save_point <= self.capacity) {
+            self.offset = save_point;
+        }
+    }
+    
+    // -------------------------------------------------------------------------
+    // Statistics
+    // -------------------------------------------------------------------------
+    
+    fn used(self) -> int {
+        return self.offset;
+    }
+    
+    fn available(self) -> int {
+        return self.capacity - self.offset;
+    }
+    
+    fn capacity(self) -> int {
+        return self.capacity;
+    }
+    
+    fn is_empty(self) -> bool {
+        return self.offset == 0;
+    }
+    
+    fn utilization(self) -> float {
+        if (self.capacity == 0) {
+            return 0.0;
+        }
+        return self.offset as float / self.capacity as float;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Internal
+    // -------------------------------------------------------------------------
+    
+    fn _grow(self, min_size: int) -> void {
+        int new_capacity = self.capacity * 2;
+        if (new_capacity < min_size) {
+            new_capacity = min_size;
+        }
+        
+        void* new_base = Memory.alloc(new_capacity);
+        if (new_base == 0) {
+            return;
+        }
+        
+        // Copy old data
+        Memory.copy(new_base, self.base, self.offset);
+        
+        // Free old memory
+        Memory.free(self.base, self.capacity);
+        
+        self.base = new_base;
+        self.capacity = new_capacity;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ArenaRef Type - Reference to arena-allocated object
+// -----------------------------------------------------------------------------
+
+struct ArenaRef<T> {
+    arena: Arena*;
+    ptr: T*;
+}
+
+impl ArenaRef<T> {
+    constructor(arena: Arena*, ptr: T*) {
+        self.arena = arena;
+        self.ptr = ptr;
+    }
+    
+    fn get(self) -> T* {
+        return self.ptr;
+    }
+    
+    fn deref(self) -> T {
+        return *self.ptr;
+    }
+    
+    fn is_valid(self) -> bool {
+        return self.arena != 0 && self.ptr != 0;
+    }
+    
+    fn arena_id(self) -> int {
+        if (self.arena != 0) {
+            return self.arena.id;
+        }
+        return 0;
+    }
+    
+    // Check if this reference belongs to a specific arena
+    fn belongs_to(self, arena: Arena*) -> bool {
+        return self.arena != 0 && self.arena.id == arena.id;
+    }
+    
+    // Validate reference is still in bounds
+    fn in_bounds(self) -> bool {
+        if (self.arena == 0 || self.ptr == 0) {
+            return false;
+        }
+        
+        int offset = self.ptr - self.arena.base;
+        return offset >= 0 && offset < self.arena.offset;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Convenience Functions
+// -----------------------------------------------------------------------------
+
+fn arena_new() -> Arena* {
+    return Arena.growable(ARENA_DEFAULT_CAPACITY);
+}
+
+fn arena_with_capacity(capacity: int) -> Arena* {
+    return Arena.with_capacity(capacity);
+}

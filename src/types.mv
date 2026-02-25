@@ -1,0 +1,117 @@
+// =============================================================================
+// Manv Standard Type Aliases (Tier B)
+// =============================================================================
+// 
+// This module defines standard type aliases that provide more ergonomic names
+// for common use cases. These are transparent aliases - they resolve to their
+// canonical Tier A types for all operations.
+//
+// Usage Recommendation:
+//   - Use `int` for general-purpose integers
+//   - Use `uint` for sizes, counts, and indices
+//   - Use `byte` for raw byte data
+//   - Use `float` for floating-point calculations
+//
+// For FFI interop or when specific bit widths matter, use Tier A types directly:
+//   - i8, i16, i32, i64, i128 (signed integers)
+//   - u8, u16, u32, u64, u128 (unsigned integers)
+//   - f32, f64 (floating point)
+//   - isize, usize (pointer-sized)
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Core Integer Aliases
+// -----------------------------------------------------------------------------
+
+/// Machine-native signed integer.
+/// Maps to `isize` (64-bit on x86_64).
+/// Use for general-purpose integer values.
+typedef int = isize;
+
+/// Machine-native unsigned integer.
+/// Maps to `usize` (64-bit on x86_64).
+/// Use for sizes, counts, indices, and non-negative values.
+typedef uint = usize;
+
+/// Single byte (unsigned 8-bit).
+/// Maps to `u8`.
+/// Use for raw byte data, ASCII characters, small flags.
+typedef byte = u8;
+
+// -----------------------------------------------------------------------------
+// Floating Point Aliases
+// -----------------------------------------------------------------------------
+
+/// Double-precision floating point.
+/// Maps to `f64` (IEEE 754 double precision).
+/// Use for most floating-point calculations.
+typedef float = f64;
+
+/// Single-precision floating point.
+/// Maps to `f32` (IEEE 754 single precision).
+/// Use when memory is constrained or SIMD operations are needed.
+typedef float32 = f32;
+
+/// Double-precision floating point (explicit name).
+/// Maps to `f64` (IEEE 754 double precision).
+typedef float64 = f64;
+
+// -----------------------------------------------------------------------------
+// Size/Offset Aliases
+// -----------------------------------------------------------------------------
+
+/// Size type for containers and memory.
+/// Alias for `usize`.
+typedef Size = usize;
+
+/// Offset type for pointer arithmetic.
+/// Alias for `isize`.
+typedef Offset = isize;
+
+// -----------------------------------------------------------------------------
+// Common Integer Aliases
+// -----------------------------------------------------------------------------
+
+/// 32-bit signed integer alias.
+typedef int32 = i32;
+
+/// 64-bit signed integer alias.
+typedef int64 = i64;
+
+/// 32-bit unsigned integer alias.
+typedef uint32 = u32;
+
+/// 64-bit unsigned integer alias.
+typedef uint64 = u64;
+
+// -----------------------------------------------------------------------------
+// Char Types
+// -----------------------------------------------------------------------------
+
+/// Unicode character.
+/// Alias for `char`.
+typedef Char = char;
+
+// -----------------------------------------------------------------------------
+// Documentation Notes
+// -----------------------------------------------------------------------------
+//
+// Alias Transparency:
+// -------------------
+// All typedef aliases are transparent. This means:
+//   int x = 42;
+//   isize y = x;  // No cast needed
+//   x = y;        // Works both ways
+//
+// Methods defined on the canonical type are available through the alias:
+//   impl isize {
+//       fn abs(self) -> isize { ... }
+//   }
+//   int value = -5;
+//   int result = value.abs();  // Works!
+//
+// Cycle Detection:
+// ---------------
+// Cyclic aliases are detected at compile time:
+//   typedef A = B;  // ERROR
+//   typedef B = A;  // Cyclic alias detected

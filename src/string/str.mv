@@ -1,0 +1,37 @@
+impl str {
+    fn len(self) -> uint {
+        return 0;
+    }
+
+    fn is_empty(self) -> bool {
+        return false;
+    }
+
+    fn contains(self, str needle) -> bool {
+        return false;
+    }
+
+    fn starts_with(self, str prefix) -> bool {
+        return false;
+    }
+
+    fn ends_with(self, str suffix) -> bool {
+        return false;
+    }
+
+    fn find(self, str needle) -> Option<uint> {
+        return str_option_none_uint();
+    }
+
+    fn slice(self, uint start, uint end) -> str {
+        return self;
+    }
+
+    fn trim(self) -> str {
+        return self;
+    }
+}
+
+fn str_option_none_uint() -> Option<uint> {
+    return 0;
+}

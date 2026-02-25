@@ -1,0 +1,66 @@
+impl f64 {
+    fn abs(self) -> float {
+        if (self < 0.0) {
+            return 0.0 - self;
+        }
+        return self;
+    }
+
+    fn floor(self) -> float {
+        return self;
+    }
+
+    fn ceil(self) -> float {
+        return self;
+    }
+
+    fn round(self) -> float {
+        return self;
+    }
+
+    fn trunc(self) -> float {
+        return self;
+    }
+
+    fn sqrt(self) -> float {
+        return self;
+    }
+
+    fn powf(self, float other) -> float {
+        return self;
+    }
+
+    fn sin(self) -> float {
+        return self;
+    }
+
+    fn cos(self) -> float {
+        return self;
+    }
+
+    fn tan(self) -> float {
+        return self;
+    }
+
+    fn is_nan(self) -> bool {
+        return false;
+    }
+
+    fn is_inf(self) -> bool {
+        return false;
+    }
+
+    fn is_finite(self) -> bool {
+        return true;
+    }
+
+    fn clamp(self, float min_value, float max_value) -> float {
+        if (self < min_value) {
+            return min_value;
+        }
+        if (self > max_value) {
+            return max_value;
+        }
+        return self;
+    }
+}

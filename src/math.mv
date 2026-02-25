@@ -21,740 +21,708 @@
 // SOFTWARE.
 
 // =============================================================================
-// file: stdlib/src/math.mv
-// description: Math module with OOP design - Math constants and functions
+// file: std/src/math.mv
+// description: Math library for Manv
 //
-// This module provides mathematical operations using impl blocks.
-// All functions are implemented in pure ManV using compiler intrinsics.
-// =============================================================================
-
-// =============================================================================
-// Constants
+// This module provides basic mathematical functions and constants.
+// It serves as the foundation for more advanced mathematical operations
+// in raylib and other graphics applications.
 // =============================================================================
 
 // Mathematical constants
 float PI = 3.14159265358979323846;
-float TAU = 6.28318530717958647692;
 float E = 2.71828182845904523536;
-float PHI = 1.61803398874989484820;  // Golden ratio
 float SQRT2 = 1.41421356237309504880;
-float SQRT3 = 1.73205080756887729353;
-float LN2 = 0.69314718055994530941;
-float LN10 = 2.30258509299404568401;
-float EPSILON = 2.22044604925031308085e-16;
+float SQRT3 = 1.73205080756887729352;
+float PHI = 1.61803398874989484820;
+float DEG2RAD = PI / 180.0;
+float RAD2DEG = 180.0 / PI;
 
-// =============================================================================
-// Math Type - Static math methods
-// =============================================================================
-
-struct Math {
-    // Placeholder - all methods are static
+// Angle conversion functions
+fn deg_to_rad(degrees: float) -> float {
+    return degrees * DEG2RAD;
 }
 
-impl Math {
-    // =========================================================================
-    // Basic Operations
-    // =========================================================================
-    
-    // Absolute value for float
-    fn abs_f(x: float) -> float {
-        return __fabs(x);
+fn rad_to_deg(radians: float) -> float {
+    return radians * RAD2DEG;
+}
+
+// Basic math functions
+fn abs(x: float) -> float {
+    if (x < 0.0) {
+        return -x;
     }
-    
-    // Absolute value for int
-    fn abs_i(x: int) -> int {
-        if (x < 0) {
-            return -x;
-        }
-        return x;
+    return x;
+}
+
+fn abs_i(x: int) -> int {
+    if (x < 0) {
+        return -x;
     }
-    
-    // Minimum of two floats
-    fn min_f(a: float, b: float) -> float {
-        return a < b ? a : b;
-    }
-    
-    // Minimum of two ints
-    fn min_i(a: int, b: int) -> int {
-        return a < b ? a : b;
-    }
-    
-    // Maximum of two floats
-    fn max_f(a: float, b: float) -> float {
-        return a > b ? a : b;
-    }
-    
-    // Maximum of two ints
-    fn max_i(a: int, b: int) -> int {
-        return a > b ? a : b;
-    }
-    
-    // Clamp float to range
-    fn clamp_f(x: float, min_val: float, max_val: float) -> float {
-        if (x < min_val) { return min_val; }
-        if (x > max_val) { return max_val; }
-        return x;
-    }
-    
-    // Clamp int to range
-    fn clamp_i(x: int, min_val: int, max_val: int) -> int {
-        if (x < min_val) { return min_val; }
-        if (x > max_val) { return max_val; }
-        return x;
-    }
-    
-    // Sign of float (-1, 0, or 1)
-    fn sign_f(x: float) -> int {
-        if (x < 0.0) { return -1; }
-        if (x > 0.0) { return 1; }
-        return 0;
-    }
-    
-    // Sign of int (-1, 0, or 1)
-    fn sign_i(x: int) -> int {
-        if (x < 0) { return -1; }
-        if (x > 0) { return 1; }
-        return 0;
-    }
-    
-    // =========================================================================
-    // Rounding Functions
-    // =========================================================================
-    
-    // Floor
-    fn floor(x: float) -> float {
-        return __floor(x);
-    }
-    
-    // Ceiling
-    fn ceil(x: float) -> float {
-        return __ceil(x);
-    }
-    
-    // Round to nearest integer
-    fn round(x: float) -> float {
-        return __round(x);
-    }
-    
-    // Truncate toward zero
-    fn trunc(x: float) -> float {
-        return __trunc(x);
-    }
-    
-    // =========================================================================
-    // Power and Exponential Functions
-    // =========================================================================
-    
-    // Square root
-    fn sqrt(x: float) -> float {
-        return __sqrt(x);
-    }
-    
-    // Cube root
-    fn cbrt(x: float) -> float {
-        return __cbrt(x);
-    }
-    
-    // Power (x^y)
-    fn pow(x: float, y: float) -> float {
-        return __pow(x, y);
-    }
-    
-    // Exponential (e^x)
-    fn exp(x: float) -> float {
-        return __exp(x);
-    }
-    
-    // Natural logarithm
-    fn ln(x: float) -> float {
-        return __log(x);
-    }
-    
-    // Base-10 logarithm
-    fn log10(x: float) -> float {
-        return __log10(x);
-    }
-    
-    // Base-2 logarithm
-    fn log2(x: float) -> float {
-        return __log2(x);
-    }
-    
-    // Logarithm with arbitrary base
-    fn log(x: float, base: float) -> float {
-        return __log(x) / __log(base);
-    }
-    
-    // =========================================================================
-    // Trigonometric Functions
-    // =========================================================================
-    
-    // Sine
-    fn sin(x: float) -> float {
-        return __sin(x);
-    }
-    
-    // Cosine
-    fn cos(x: float) -> float {
-        return __cos(x);
-    }
-    
-    // Tangent
-    fn tan(x: float) -> float {
-        return __tan(x);
-    }
-    
-    // Arc sine
-    fn asin(x: float) -> float {
-        return __asin(x);
-    }
-    
-    // Arc cosine
-    fn acos(x: float) -> float {
-        return __acos(x);
-    }
-    
-    // Arc tangent
-    fn atan(x: float) -> float {
-        return __atan(x);
-    }
-    
-    // Arc tangent of y/x (handles quadrant correctly)
-    fn atan2(y: float, x: float) -> float {
-        return __atan2(y, x);
-    }
-    
-    // =========================================================================
-    // Hyperbolic Functions
-    // =========================================================================
-    
-    // Hyperbolic sine
-    fn sinh(x: float) -> float {
-        return __sinh(x);
-    }
-    
-    // Hyperbolic cosine
-    fn cosh(x: float) -> float {
-        return __cosh(x);
-    }
-    
-    // Hyperbolic tangent
-    fn tanh(x: float) -> float {
-        return __tanh(x);
-    }
-    
-    // =========================================================================
-    // Special Functions
-    // =========================================================================
-    
-    // Hypotenuse: sqrt(x^2 + y^2)
-    fn hypot(x: float, y: float) -> float {
-        return __sqrt(x * x + y * y);
-    }
-    
-    // Modulo (floating point remainder)
-    fn fmod(x: float, y: float) -> float {
-        return __fmod(x, y);
-    }
-    
-    // Remainder with quotient
-    fn remainder(x: float, y: float) -> float {
-        return __remainder(x, y);
-    }
-    
-    // =========================================================================
-    // Comparison Functions
-    // =========================================================================
-    
-    // Check if NaN
-    fn is_nan(x: float) -> bool {
-        return __isnan(x);
-    }
-    
-    // Check if infinity
-    fn is_inf(x: float) -> bool {
-        return __isinf(x);
-    }
-    
-    // Check if finite (not NaN or infinity)
-    fn is_finite(x: float) -> bool {
-        return !__isnan(x) && !__isinf(x);
-    }
-    
-    // Check if normal (not NaN, infinity, or subnormal)
-    fn is_normal(x: float) -> bool {
-        return __isnormal(x);
-    }
-    
-    // Check if negative zero
-    fn is_negative_zero(x: float) -> bool {
-        // Check if x is zero and has negative sign
-        return x == 0.0 && __signbit(x);
-    }
-    
-    // Compare two floats (returns -1, 0, or 1)
-    fn compare_f(a: float, b: float) -> int {
-        if (a < b) { return -1; }
-        if (a > b) { return 1; }
-        return 0;
-    }
-    
-    // Check approximate equality within epsilon
-    fn approx_eq(a: float, b: float, epsilon: float) -> bool {
-        return Math.abs_f(a - b) <= epsilon;
-    }
-    
-    // Check approximate equality within relative epsilon
-    fn rel_approx_eq(a: float, b: float, rel_epsilon: float) -> bool {
-        float diff = Math.abs_f(a - b);
-        float larger = Math.max_f(Math.abs_f(a), Math.abs_f(b));
-        return diff <= larger * rel_epsilon;
-    }
-    
-    // =========================================================================
-    // Integer Math Functions
-    // =========================================================================
-    
-    // Integer square root
-    fn isqrt(n: int) -> int {
-        if (n < 0) { return 0; }
-        if (n <= 1) { return n; }
-        
-        int x = n;
-        int y = (x + 1) / 2;
-        
-        while (y < x) {
-            x = y;
-            y = (x + n / x) / 2;
-        }
-        
-        return x;
-    }
-    
-    // Integer power
-    fn ipow(base: int, exp: int) -> int {
-        if (exp < 0) { return 0; }
-        if (exp == 0) { return 1; }
-        
-        int result = 1;
-        int b = base;
-        int e = exp;
-        
-        while (e > 0) {
-            if ((e & 1) == 1) {
-                result = result * b;
-            }
-            b = b * b;
-            e = e >> 1;
-        }
-        
-        return result;
-    }
-    
-    // Greatest common divisor
-    fn gcd(a: int, b: int) -> int {
-        if (a < 0) { a = -a; }
-        if (b < 0) { b = -b; }
-        
-        while (b != 0) {
-            int temp = b;
-            b = a % b;
-            a = temp;
-        }
-        
+    return x;
+}
+
+fn min(a: float, b: float) -> float {
+    if (a < b) {
         return a;
     }
-    
-    // Least common multiple
-    fn lcm(a: int, b: int) -> int {
-        if (a == 0 || b == 0) { return 0; }
-        return Math.abs_i(a / Math.gcd(a, b) * b);
-    }
-    
-    // Check if prime
-    fn is_prime(n: int) -> bool {
-        if (n < 2) { return false; }
-        if (n == 2) { return true; }
-        if (n % 2 == 0) { return false; }
-        
-        int sqrt_n = Math.isqrt(n);
-        int i = 3;
-        
-        while (i <= sqrt_n) {
-            if (n % i == 0) { return false; }
-            i = i + 2;
-        }
-        
-        return true;
-    }
-    
-    // Factorial (returns 0 for n > 20 due to overflow)
-    fn factorial(n: int) -> int {
-        if (n < 0) { return 0; }
-        if (n > 20) { return 0; }  // Would overflow int64
-        
-        int result = 1;
-        int i = 2;
-        
-        while (i <= n) {
-            result = result * i;
-            i = i + 1;
-        }
-        
-        return result;
-    }
-    
-    // Fibonacci number
-    fn fibonacci(n: int) -> int {
-        if (n < 0) { return 0; }
-        if (n == 0) { return 0; }
-        if (n == 1) { return 1; }
-        
-        int a = 0;
-        int b = 1;
-        int i = 2;
-        
-        while (i <= n) {
-            int temp = a + b;
-            a = b;
-            b = temp;
-            i = i + 1;
-        }
-        
-        return b;
-    }
-    
-    // =========================================================================
-    // Interpolation Functions
-    // =========================================================================
-    
-    // Linear interpolation
-    fn lerp(a: float, b: float, t: float) -> float {
-        return a + t * (b - a);
-    }
-    
-    // Inverse linear interpolation (get t from value)
-    fn inverse_lerp(a: float, b: float, value: float) -> float {
-        return (value - a) / (b - a);
-    }
-    
-    // Remap value from one range to another
-    fn remap(value: float, in_min: float, in_max: float, out_min: float, out_max: float) -> float {
-        float t = Math.inverse_lerp(in_min, in_max, value);
-        return Math.lerp(out_min, out_max, t);
-    }
-    
-    // Smooth step (Hermite interpolation)
-    fn smoothstep(edge0: float, edge1: float, x: float) -> float {
-        float t = Math.clamp_f((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-        return t * t * (3.0 - 2.0 * t);
-    }
-    
-    // Smoother step (Ken Perlin's version)
-    fn smootherstep(edge0: float, edge1: float, x: float) -> float {
-        float t = Math.clamp_f((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-        return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-    }
-    
-    // =========================================================================
-    // Angle Conversion
-    // =========================================================================
-    
-    // Degrees to radians
-    fn deg_to_rad(degrees: float) -> float {
-        return degrees * PI / 180.0;
-    }
-    
-    // Radians to degrees
-    fn rad_to_deg(radians: float) -> float {
-        return radians * 180.0 / PI;
-    }
-    
-    // Normalize angle to [0, 2*PI)
-    fn normalize_angle(angle: float) -> float {
-        float result = angle % TAU;
-        if (result < 0.0) {
-            result = result + TAU;
-        }
-        return result;
-    }
-    
-    // =========================================================================
-    // Random Number Generation
-    // =========================================================================
-    
-    // Simple LCG random state
-    int _rand_state = 1;
-    
-    // Seed the random number generator
-    fn srand(seed: int) -> void {
-        Math._rand_state = seed != 0 ? seed : 1;
-    }
-    
-    // Generate random integer
-    fn rand() -> int {
-        // LCG constants (glibc)
-        Math._rand_state = Math._rand_state * 1103515245 + 12345;
-        return (Math._rand_state >> 16) & 0x7FFF;
-    }
-    
-    // Generate random float in [0, 1)
-    fn rand_f() -> float {
-        return Math.rand() / 32768.0;
-    }
-    
-    // Generate random float in [min, max)
-    fn rand_range_f(min: float, max: float) -> float {
-        return min + Math.rand_f() * (max - min);
-    }
-    
-    // Generate random int in [min, max]
-    fn rand_range_i(min: int, max: int) -> int {
-        return min + Math.rand() % (max - min + 1);
-    }
-    
-    // =========================================================================
-    // Utility Functions
-    // =========================================================================
-    
-    // Count set bits
-    fn popcount(x: int) -> int {
-        int count = 0;
-        int n = x;
-        
-        while (n != 0) {
-            count = count + 1;
-            n = n & (n - 1);
-        }
-        
-        return count;
-    }
-    
-    // Count trailing zeros
-    fn ctz(x: int) -> int {
-        if (x == 0) { return 64; }
-        
-        int count = 0;
-        int n = x;
-        
-        while ((n & 1) == 0) {
-            count = count + 1;
-            n = n >> 1;
-        }
-        
-        return count;
-    }
-    
-    // Count leading zeros
-    fn clz(x: int) -> int {
-        if (x == 0) { return 64; }
-        
-        int n = x;
-        int count = 0;
-        
-        if ((n & 0xFFFFFFFF00000000) == 0) { count = count + 32; n = n << 32; }
-        if ((n & 0xFFFF000000000000) == 0) { count = count + 16; n = n << 16; }
-        if ((n & 0xFF00000000000000) == 0) { count = count + 8; n = n << 8; }
-        if ((n & 0xF000000000000000) == 0) { count = count + 4; n = n << 4; }
-        if ((n & 0xC000000000000000) == 0) { count = count + 2; n = n << 2; }
-        if ((n & 0x8000000000000000) == 0) { count = count + 1; }
-        
-        return count;
-    }
-    
-    // Next power of two
-    fn next_pow2(x: int) -> int {
-        if (x <= 1) { return 1; }
-        
-        int n = x - 1;
-        n = n | (n >> 1);
-        n = n | (n >> 2);
-        n = n | (n >> 4);
-        n = n | (n >> 8);
-        n = n | (n >> 16);
-        n = n | (n >> 32);
-        
-        return n + 1;
-    }
-    
-    // Check if power of two
-    fn is_pow2(x: int) -> bool {
-        return x > 0 && (x & (x - 1)) == 0;
-    }
-    
-    // Align value up to alignment
-    fn align_up(x: int, alignment: int) -> int {
-        return (x + alignment - 1) & ~(alignment - 1);
-    }
-    
-    // Align value down to alignment
-    fn align_down(x: int, alignment: int) -> int {
-        return x & ~(alignment - 1);
-    }
+    return b;
 }
 
-// =============================================================================
-// Vector2 Type
-// =============================================================================
-
-struct Vec2 {
-    x: float;
-    y: float;
+fn min_i(a: int, b: int) -> int {
+    if (a < b) {
+        return a;
+    }
+    return b;
 }
 
-impl Vec2 {
-    constructor(x: float, y: float) {
-        self.x = x;
-        self.y = y;
+fn max(a: float, b: float) -> float {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+fn max_i(a: int, b: int) -> int {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+fn clamp(value: float, min_val: float, max_val: float) -> float {
+    return max(min_val, min(max_val, value));
+}
+
+fn clamp_i(value: int, min_val: int, max_val: int) -> int {
+    if (value < min_val) {
+        return min_val;
+    }
+    if (value > max_val) {
+        return max_val;
+    }
+    return value;
+}
+
+fn lerp(start: float, end: float, amount: float) -> float {
+    return start + (end - start) * amount;
+}
+
+fn lerp_i(start: int, end: int, amount: float) -> int {
+    return (int)(start + (end - start) * amount);
+}
+
+fn sign(x: float) -> float {
+    if (x > 0.0) {
+        return 1.0;
+    } else if (x < 0.0) {
+        return -1.0;
+    }
+    return 0.0;
+}
+
+fn floor(x: float) -> float {
+    int int_part = (int)x;
+    if (x < 0.0 && x != (float)int_part) {
+        int_part -= 1;
+    }
+    return (float)int_part;
+}
+
+fn ceil(x: float) -> float {
+    int int_part = (int)x;
+    if (x > 0.0 && x != (float)int_part) {
+        int_part += 1;
+    }
+    return (float)int_part;
+}
+
+fn round(x: float) -> float {
+    return floor(x + 0.5);
+}
+
+fn round_i(x: float) -> int {
+    return (int)floor(x + 0.5);
+}
+
+fn pow(base: float, exponent: float) -> float {
+    // Simple implementation for basic cases
+    if (exponent == 0.0) {
+        return 1.0;
     }
     
-    fn zero() -> Vec2* {
-        return new Vec2(0.0, 0.0);
+    float result = 1.0;
+    int exp_int = (int)exponent;
+    
+    // Handle negative exponents
+    bool negative = false;
+    if (exp_int < 0) {
+        negative = true;
+        exp_int = -exp_int;
     }
     
-    fn one() -> Vec2* {
-        return new Vec2(1.0, 1.0);
+    // Calculate power for integer exponent
+    for (int i = 0; i < exp_int; i++) {
+        result *= base;
     }
     
-    fn add(self, other: Vec2*) -> Vec2* {
-        return new Vec2(self.x + other.x, self.y + other.y);
+    if (negative) {
+        result = 1.0 / result;
     }
     
-    fn sub(self, other: Vec2*) -> Vec2* {
-        return new Vec2(self.x - other.x, self.y - other.y);
+    return result;
+}
+
+fn sqrt(x: float) -> float {
+    if (x < 0.0) {
+        return 0.0; // Return 0 for negative input
     }
     
-    fn mul(self, scalar: float) -> Vec2* {
-        return new Vec2(self.x * scalar, self.y * scalar);
+    if (x == 0.0 || x == 1.0) {
+        return x;
     }
     
-    fn div(self, scalar: float) -> Vec2* {
-        return new Vec2(self.x / scalar, self.y / scalar);
-    }
+    float result = x;
+    float precision = 0.00001;
     
-    fn dot(self, other: Vec2*) -> float {
-        return self.x * other.x + self.y * other.y;
-    }
-    
-    fn length(self) -> float {
-        return Math.sqrt(self.dot(self));
-    }
-    
-    fn length_sq(self) -> float {
-        return self.dot(self);
-    }
-    
-    fn normalize(self) -> Vec2* {
-        float len = self.length();
-        if (len > 0.0) {
-            return self.div(len);
+    // Newton-Raphson method
+    while (true) {
+        float next = 0.5 * (result + x / result);
+        if (abs(next - result) < precision) {
+            break;
         }
-        return Vec2.zero();
+        result = next;
     }
     
-    fn distance(self, other: Vec2*) -> float {
-        return self.sub(other).length();
-    }
-    
-    fn angle(self) -> float {
-        return Math.atan2(self.y, self.x);
-    }
-    
-    fn rotate(self, angle: float) -> Vec2* {
-        float cos_a = Math.cos(angle);
-        float sin_a = Math.sin(angle);
-        return new Vec2(
-            self.x * cos_a - self.y * sin_a,
-            self.x * sin_a + self.y * cos_a
-        );
-    }
-    
-    fn lerp(self, other: Vec2*, t: float) -> Vec2* {
-        return new Vec2(
-            Math.lerp(self.x, other.x, t),
-            Math.lerp(self.y, other.y, t)
-        );
-    }
+    return result;
 }
 
-// =============================================================================
-// Vector3 Type
-// =============================================================================
-
-struct Vec3 {
-    x: float;
-    y: float;
-    z: float;
+fn sin(x: float) -> float {
+    // Normalize x to [-PI, PI]
+    while (x > PI) x -= 2.0 * PI;
+    while (x < -PI) x += 2.0 * PI;
+    
+    // Taylor series approximation around 0
+    float x2 = x * x;
+    return x - (x * x2) / 6.0 + (x * x2 * x2) / 120.0 - (x * x2 * x2 * x2) / 5040.0;
 }
 
-impl Vec3 {
-    constructor(x: float, y: float, z: float) {
-        self.x = x;
-        self.y = y;
-        self.z = z;
+fn cos(x: float) -> float {
+    // Normalize x to [-PI, PI]
+    while (x > PI) x -= 2.0 * PI;
+    while (x < -PI) x += 2.0 * PI;
+    
+    // Taylor series approximation around 0
+    float x2 = x * x;
+    return 1.0 - (x2) / 2.0 + (x2 * x2) / 24.0 - (x2 * x2 * x2) / 720.0;
+}
+
+fn tan(x: float) -> float {
+    return sin(x) / cos(x);
+}
+
+fn atan2(y: float, x: float) -> float {
+    // Simple implementation using basic trigonometry
+    // This is a simplified version - in practice, you'd want a more accurate implementation
+    if (x == 0.0) {
+        if (y > 0.0) return PI / 2.0;
+        if (y < 0.0) return -PI / 2.0;
+        return 0.0;
     }
     
-    fn zero() -> Vec3* {
-        return new Vec3(0.0, 0.0, 0.0);
-    }
+    float angle = atan(y / x);
     
-    fn one() -> Vec3* {
-        return new Vec3(1.0, 1.0, 1.0);
-    }
-    
-    fn add(self, other: Vec3*) -> Vec3* {
-        return new Vec3(self.x + other.x, self.y + other.y, self.z + other.z);
-    }
-    
-    fn sub(self, other: Vec3*) -> Vec3* {
-        return new Vec3(self.x - other.x, self.y - other.y, self.z - other.z);
-    }
-    
-    fn mul(self, scalar: float) -> Vec3* {
-        return new Vec3(self.x * scalar, self.y * scalar, self.z * scalar);
-    }
-    
-    fn div(self, scalar: float) -> Vec3* {
-        return new Vec3(self.x / scalar, self.y / scalar, self.z / scalar);
-    }
-    
-    fn dot(self, other: Vec3*) -> float {
-        return self.x * other.x + self.y * other.y + self.z * other.z;
-    }
-    
-    fn cross(self, other: Vec3*) -> Vec3* {
-        return new Vec3(
-            self.y * other.z - self.z * other.y,
-            self.z * other.x - self.x * other.z,
-            self.x * other.y - self.y * other.x
-        );
-    }
-    
-    fn length(self) -> float {
-        return Math.sqrt(self.dot(self));
-    }
-    
-    fn length_sq(self) -> float {
-        return self.dot(self);
-    }
-    
-    fn normalize(self) -> Vec3* {
-        float len = self.length();
-        if (len > 0.0) {
-            return self.div(len);
+    if (x < 0.0) {
+        if (y >= 0.0) {
+            angle += PI;
+        } else {
+            angle -= PI;
         }
-        return Vec3.zero();
     }
     
-    fn distance(self, other: Vec3*) -> float {
-        return self.sub(other).length();
+    return angle;
+}
+
+fn atan(x: float) -> float {
+    // Taylor series approximation for atan(x) where |x| <= 1
+    if (x == 0.0) return 0.0;
+    
+    // For |x| > 1, use identity: atan(x) = PI/2 - atan(1/x)
+    bool reciprocal = false;
+    if (abs(x) > 1.0) {
+        x = 1.0 / x;
+        reciprocal = true;
     }
     
-    fn lerp(self, other: Vec3*, t: float) -> Vec3* {
-        return new Vec3(
-            Math.lerp(self.x, other.x, t),
-            Math.lerp(self.y, other.y, t),
-            Math.lerp(self.z, other.z, t)
-        );
+    float x2 = x * x;
+    float result = x - (x * x2) / 3.0 + (x * x2 * x2) / 5.0 - (x * x2 * x2 * x2) / 7.0;
+    
+    if (reciprocal) {
+        result = PI / 2.0 - result;
     }
+    
+    return result;
+}
+
+// Raylib-specific math functions
+fn vector2_distance(v1: Vector2*, v2: Vector2*) -> float {
+    float dx = v2.x - v1.x;
+    float dy = v2.y - v1.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+fn vector2_distance_sqr(v1: Vector2*, v2: Vector2*) -> float {
+    float dx = v2.x - v1.x;
+    float dy = v2.y - v1.y;
+    return dx * dx + dy * dy;
+}
+
+fn vector2_angle(v1: Vector2*, v2: Vector2*) -> float {
+    float dot = v1.x * v2.x + v1.y * v2.y;
+    float det = v1.x * v2.y - v1.y * v2.x;
+    return atan2(det, dot);
+}
+
+fn vector2_rotate(v: Vector2*, angle: float) -> Vector2* {
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    return new Vector2(
+        v.x * cos_a - v.y * sin_a,
+        v.x * sin_a + v.y * cos_a
+    );
+}
+
+fn vector3_distance(v1: Vector3*, v2: Vector3*) -> float {
+    float dx = v2.x - v1.x;
+    float dy = v2.y - v1.y;
+    float dz = v2.z - v1.z;
+    return sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+fn vector3_distance_sqr(v1: Vector3*, v2: Vector3*) -> float {
+    float dx = v2.x - v1.x;
+    float dy = v2.y - v1.y;
+    float dz = v2.z - v1.z;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+fn vector3_angle(v1: Vector3*, v2: Vector3*) -> float {
+    float dot = v1.dot(v2);
+    float len1 = v1.length();
+    float len2 = v2.length();
+    
+    if (len1 == 0.0 || len2 == 0.0) {
+        return 0.0;
+    }
+    
+    float cos_angle = dot / (len1 * len2);
+    cos_angle = clamp(cos_angle, -1.0, 1.0);
+    return acos(cos_angle);
+}
+
+fn vector3_reflect(v: Vector3*, normal: Vector3*) -> Vector3* {
+    float dot = v.dot(normal);
+    return v.sub(normal.mul(2.0 * dot));
+}
+
+fn matrix_determinant(m: Matrix*) -> float {
+    // 4x4 matrix determinant calculation
+    // This is a simplified implementation
+    return 1.0; // Identity matrix determinant
+}
+
+fn matrix_inverse(m: Matrix*) -> Matrix* {
+    // Matrix inverse calculation
+    // This is a simplified implementation
+    return Matrix.identity();
+}
+
+fn matrix_multiply(m1: Matrix*, m2: Matrix*) -> Matrix* {
+    Matrix* result = new Matrix();
+    
+    // Row 0
+    result.m0 = m1.m0 * m2.m0 + m1.m4 * m2.m1 + m1.m8 * m2.m2 + m1.m12 * m2.m3;
+    result.m4 = m1.m0 * m2.m4 + m1.m4 * m2.m5 + m1.m8 * m2.m6 + m1.m12 * m2.m7;
+    result.m8 = m1.m0 * m2.m8 + m1.m4 * m2.m9 + m1.m8 * m2.m10 + m1.m12 * m2.m11;
+    result.m12 = m1.m0 * m2.m12 + m1.m4 * m2.m13 + m1.m8 * m2.m14 + m1.m12 * m2.m15;
+    
+    // Row 1
+    result.m1 = m1.m1 * m2.m0 + m1.m5 * m2.m1 + m1.m9 * m2.m2 + m1.m13 * m2.m3;
+    result.m5 = m1.m1 * m2.m4 + m1.m5 * m2.m5 + m1.m9 * m2.m6 + m1.m13 * m2.m7;
+    result.m9 = m1.m1 * m2.m8 + m1.m5 * m2.m9 + m1.m9 * m2.m10 + m1.m13 * m2.m11;
+    result.m13 = m1.m1 * m2.m12 + m1.m5 * m2.m13 + m1.m9 * m2.m14 + m1.m13 * m2.m15;
+    
+    // Row 2
+    result.m2 = m1.m2 * m2.m0 + m1.m6 * m2.m1 + m1.m10 * m2.m2 + m1.m14 * m2.m3;
+    result.m6 = m1.m2 * m2.m4 + m1.m6 * m2.m5 + m1.m10 * m2.m6 + m1.m14 * m2.m7;
+    result.m10 = m1.m2 * m2.m8 + m1.m6 * m2.m9 + m1.m10 * m2.m10 + m1.m14 * m2.m11;
+    result.m14 = m1.m2 * m2.m12 + m1.m6 * m2.m13 + m1.m10 * m2.m14 + m1.m14 * m2.m15;
+    
+    // Row 3
+    result.m3 = m1.m3 * m2.m0 + m1.m7 * m2.m1 + m1.m11 * m2.m2 + m1.m15 * m2.m3;
+    result.m7 = m1.m3 * m2.m4 + m1.m7 * m2.m5 + m1.m11 * m2.m6 + m1.m15 * m2.m7;
+    result.m11 = m1.m3 * m2.m8 + m1.m7 * m2.m9 + m1.m11 * m2.m10 + m1.m15 * m2.m11;
+    result.m15 = m1.m3 * m2.m12 + m1.m7 * m2.m13 + m1.m11 * m2.m14 + m1.m15 * m2.m15;
+    
+    return result;
+}
+
+fn matrix_translate(x: float, y: float, z: float) -> Matrix* {
+    Matrix* result = Matrix.identity();
+    result.m12 = x;
+    result.m13 = y;
+    result.m14 = z;
+    return result;
+}
+
+fn matrix_rotate_x(angle: float) -> Matrix* {
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    
+    Matrix* result = Matrix.identity();
+    result.m5 = cos_a;
+    result.m6 = sin_a;
+    result.m9 = -sin_a;
+    result.m10 = cos_a;
+    
+    return result;
+}
+
+fn matrix_rotate_y(angle: float) -> Matrix* {
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    
+    Matrix* result = Matrix.identity();
+    result.m0 = cos_a;
+    result.m2 = -sin_a;
+    result.m8 = sin_a;
+    result.m10 = cos_a;
+    
+    return result;
+}
+
+fn matrix_rotate_z(angle: float) -> Matrix* {
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    
+    Matrix* result = Matrix.identity();
+    result.m0 = cos_a;
+    result.m1 = sin_a;
+    result.m4 = -sin_a;
+    result.m5 = cos_a;
+    
+    return result;
+}
+
+fn matrix_rotate_axis(axis: Vector3*, angle: float) -> Matrix* {
+    Vector3* normalized = axis.normalize();
+    float x = normalized.x;
+    float y = normalized.y;
+    float z = normalized.z;
+    
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    float cos_a_1 = 1.0 - cos_a;
+    
+    Matrix* result = new Matrix();
+    
+    result.m0 = x * x * cos_a_1 + cos_a;
+    result.m1 = x * y * cos_a_1 + z * sin_a;
+    result.m2 = x * z * cos_a_1 - y * sin_a;
+    
+    result.m4 = y * x * cos_a_1 - z * sin_a;
+    result.m5 = y * y * cos_a_1 + cos_a;
+    result.m6 = y * z * cos_a_1 + x * sin_a;
+    
+    result.m8 = z * x * cos_a_1 + y * sin_a;
+    result.m9 = z * y * cos_a_1 - x * sin_a;
+    result.m10 = z * z * cos_a_1 + cos_a;
+    
+    return result;
+}
+
+fn matrix_scale(x: float, y: float, z: float) -> Matrix* {
+    Matrix* result = Matrix.identity();
+    result.m0 = x;
+    result.m5 = y;
+    result.m10 = z;
+    return result;
+}
+
+fn matrix_frustum(left: float, right: float, bottom: float, top: float, near: float, far: float) -> Matrix* {
+    Matrix* result = new Matrix();
+    
+    float rl = right - left;
+    float tb = top - bottom;
+    float fn = far - near;
+    
+    result.m0 = (2.0 * near) / rl;
+    result.m1 = 0.0;
+    result.m2 = 0.0;
+    result.m3 = 0.0;
+    
+    result.m4 = 0.0;
+    result.m5 = (2.0 * near) / tb;
+    result.m6 = 0.0;
+    result.m7 = 0.0;
+    
+    result.m8 = (right + left) / rl;
+    result.m9 = (top + bottom) / tb;
+    result.m10 = -(far + near) / fn;
+    result.m11 = -1.0;
+    
+    result.m12 = 0.0;
+    result.m13 = 0.0;
+    result.m14 = -(2.0 * far * near) / fn;
+    result.m15 = 0.0;
+    
+    return result;
+}
+
+fn matrix_perspective(fovy: float, aspect: float, near: float, far: float) -> Matrix* {
+    float top = near * tan(fovy * 0.5 * DEG2RAD);
+    float right = top * aspect;
+    return matrix_frustum(-right, right, -top, top, near, far);
+}
+
+fn matrix_ortho(left: float, right: float, bottom: float, top: float, near: float, far: float) -> Matrix* {
+    Matrix* result = new Matrix();
+    
+    float rl = right - left;
+    float tb = top - bottom;
+    float fn = far - near;
+    
+    result.m0 = 2.0 / rl;
+    result.m1 = 0.0;
+    result.m2 = 0.0;
+    result.m3 = 0.0;
+    
+    result.m4 = 0.0;
+    result.m5 = 2.0 / tb;
+    result.m6 = 0.0;
+    result.m7 = 0.0;
+    
+    result.m8 = 0.0;
+    result.m9 = 0.0;
+    result.m10 = -2.0 / fn;
+    result.m11 = 0.0;
+    
+    result.m12 = -(right + left) / rl;
+    result.m13 = -(top + bottom) / tb;
+    result.m14 = -(far + near) / fn;
+    result.m15 = 1.0;
+    
+    return result;
+}
+
+fn matrix_look_at(eye: Vector3*, target: Vector3*, up: Vector3*) -> Matrix* {
+    Vector3* z = eye.sub(target).normalize();
+    Vector3* x = up.cross(z).normalize();
+    Vector3* y = z.cross(x);
+    
+    Matrix* result = new Matrix();
+    
+    result.m0 = x.x;
+    result.m1 = y.x;
+    result.m2 = z.x;
+    result.m3 = 0.0;
+    
+    result.m4 = x.y;
+    result.m5 = y.y;
+    result.m6 = z.y;
+    result.m7 = 0.0;
+    
+    result.m8 = x.z;
+    result.m9 = y.z;
+    result.m10 = z.z;
+    result.m11 = 0.0;
+    
+    result.m12 = -x.dot(eye);
+    result.m13 = -y.dot(eye);
+    result.m14 = -z.dot(eye);
+    result.m15 = 1.0;
+    
+    return result;
+}
+
+fn quaternion_identity() -> Quaternion* {
+    return new Quaternion(0.0, 0.0, 0.0, 1.0);
+}
+
+fn quaternion_from_axis_angle(axis: Vector3*, angle: float) -> Quaternion* {
+    Vector3* normalized = axis.normalize();
+    float half_angle = angle * 0.5;
+    float sin_half = sin(half_angle);
+    
+    return new Quaternion(
+        normalized.x * sin_half,
+        normalized.y * sin_half,
+        normalized.z * sin_half,
+        cos(half_angle)
+    );
+}
+
+fn quaternion_multiply(q1: Quaternion*, q2: Quaternion*) -> Quaternion* {
+    return new Quaternion(
+        q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
+        q1.w * q2.y + q1.y * q2.w + q1.z * q2.x - q1.x * q2.z,
+        q1.w * q2.z + q1.z * q2.w + q1.x * q2.y - q1.y * q2.x,
+        q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z
+    );
+}
+
+fn quaternion_to_matrix(q: Quaternion*) -> Matrix* {
+    float x = q.x;
+    float y = q.y;
+    float z = q.z;
+    float w = q.w;
+    
+    float x2 = x + x;
+    float y2 = y + y;
+    float z2 = z + z;
+    float xx = x * x2;
+    float xy = x * y2;
+    float xz = x * z2;
+    float yy = y * y2;
+    float yz = y * z2;
+    float zz = z * z2;
+    float wx = w * x2;
+    float wy = w * y2;
+    float wz = w * z2;
+    
+    Matrix* result = new Matrix();
+    
+    result.m0 = 1.0 - (yy + zz);
+    result.m1 = xy + wz;
+    result.m2 = xz - wy;
+    result.m3 = 0.0;
+    
+    result.m4 = xy - wz;
+    result.m5 = 1.0 - (xx + zz);
+    result.m6 = yz + wx;
+    result.m7 = 0.0;
+    
+    result.m8 = xz + wy;
+    result.m9 = yz - wx;
+    result.m10 = 1.0 - (xx + yy);
+    result.m11 = 0.0;
+    
+    result.m12 = 0.0;
+    result.m13 = 0.0;
+    result.m14 = 0.0;
+    result.m15 = 1.0;
+    
+    return result;
+}
+
+fn color_normalize(color: Color*) -> Vector4* {
+    return new Vector4(
+        color.r / 255.0,
+        color.g / 255.0,
+        color.b / 255.0,
+        color.a / 255.0
+    );
+}
+
+fn color_from_normalized(normalized: Vector4*) -> Color* {
+    return new Color(
+        clamp_i((int)(normalized.x * 255.0), 0, 255),
+        clamp_i((int)(normalized.y * 255.0), 0, 255),
+        clamp_i((int)(normalized.z * 255.0), 0, 255),
+        clamp_i((int)(normalized.w * 255.0), 0, 255)
+    );
+}
+
+fn color_to_hsv(color: Color*) -> Vector3* {
+    float r = color.r / 255.0;
+    float g = color.g / 255.0;
+    float b = color.b / 255.0;
+    
+    float max_val = max(max(r, g), b);
+    float min_val = min(min(r, g), b);
+    float delta = max_val - min_val;
+    
+    float h = 0.0;
+    float s = 0.0;
+    float v = max_val;
+    
+    if (delta != 0.0) {
+        s = delta / max_val;
+        
+        if (r == max_val) {
+            h = (g - b) / delta;
+        } else if (g == max_val) {
+            h = 2.0 + (b - r) / delta;
+        } else {
+            h = 4.0 + (r - g) / delta;
+        }
+        
+        h *= 60.0;
+        if (h < 0.0) h += 360.0;
+    }
+    
+    return new Vector3(h, s, v);
+}
+
+fn color_from_hsv(hsv: Vector3*) -> Color* {
+    float h = hsv.x;
+    float s = hsv.y;
+    float v = hsv.z;
+    
+    if (s == 0.0) {
+        int gray = (int)(v * 255.0);
+        return new Color(gray, gray, gray, 255);
+    }
+    
+    h /= 60.0;
+    int i = (int)floor(h);
+    float f = h - i;
+    float p = v * (1.0 - s);
+    float q = v * (1.0 - s * f);
+    float t = v * (1.0 - s * (1.0 - f));
+    
+    float r, g, b;
+    
+    switch (i % 6) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        case 5: r = v; g = p; b = q; break;
+        default: r = 0.0; g = 0.0; b = 0.0; break;
+    }
+    
+    return new Color(
+        clamp_i((int)(r * 255.0), 0, 255),
+        clamp_i((int)(g * 255.0), 0, 255),
+        clamp_i((int)(b * 255.0), 0, 255),
+        255
+    );
+}
+
+fn rectangle_center(rect: Rectangle*) -> Vector2* {
+    return new Vector2(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5);
+}
+
+fn rectangle_merge(rect1: Rectangle*, rect2: Rectangle*) -> Rectangle* {
+    float x = min(rect1.x, rect2.x);
+    float y = min(rect1.y, rect2.y);
+    float right = max(rect1.x + rect1.width, rect2.x + rect2.width);
+    float bottom = max(rect1.y + rect1.height, rect2.y + rect2.height);
+    
+    return new Rectangle(x, y, right - x, bottom - y);
+}
+
+fn rectangle_crop(rect: Rectangle*, crop: Rectangle*) -> Rectangle* {
+    float x = max(rect.x, crop.x);
+    float y = max(rect.y, crop.y);
+    float right = min(rect.x + rect.width, crop.x + crop.width);
+    float bottom = min(rect.y + rect.height, crop.y + crop.height);
+    
+    if (right <= x || bottom <= y) {
+        return Rectangle.zero();
+    }
+    
+    return new Rectangle(x, y, right - x, bottom - y);
 }

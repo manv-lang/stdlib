@@ -1,90 +1,14 @@
 // =============================================================================
-// file: stdlib/src/mod.mv
-// description: Standard library public API surface (package entry file)
-//
-// This file serves as the curated public API for the ManV standard library.
-// Users can include the entire stdlib via: include "std";
-// Or include specific modules via: include "std/math";
-//
-// Re-exports are lazy-loaded - modules are only compiled when their symbols
-// are actually referenced.
+// Manv Standard Library (std)
 // =============================================================================
 
-// =============================================================================
-// Core Modules - Essential functionality
-// =============================================================================
+include "std/types";
+include "std/prelude";
+include "std/core";
 
-// Math - Mathematical constants and functions
-pub use math: *;
+include "std/num";
+include "std/string";
+include "std/collections";
 
-// I/O - Input/Output operations
-pub use io: *;
-
-// Collections - Data structures (arrays, lists, maps, sets)
-pub use collections: *;
-
-// =============================================================================
-// System & Runtime
-// =============================================================================
-
-// System - System-level operations and environment access
-pub use sys: *;
-
-// Memory - Memory management and allocation
-pub use memory: *;
-
-// OS - Operating system interfaces
-pub use os: *;
-
-// Time - Time and date operations
-pub use time: *;
-
-// Threads - Multi-threading support
-pub use threads: *;
-
-// =============================================================================
-// Data Formats
-// =============================================================================
-
-// JSON - JSON parsing and serialization
-pub use json: *;
-
-// TOML - TOML parsing and serialization
-pub use toml: *;
-
-// =============================================================================
-// Utilities
-// =============================================================================
-
-// File - File system operations
-pub use file: *;
-
-// Encoding - Character encoding utilities
-pub use encoding: *;
-
-// Hash - Hashing algorithms
-pub use hash: *;
-
-// Logger - Logging utilities
-pub use logger: *;
-
-// Exception - Exception types and error handling
-pub use exception: *;
-
-// =============================================================================
-// Testing
-// =============================================================================
-
-// Test - Testing framework
-pub use test: *;
-
-// =============================================================================
-// Optional/Advanced Modules (not re-exported by default)
-// =============================================================================
-
-// The following modules are available but not re-exported:
-// - crypto: Cryptographic functions (include "std/crypto")
-// - compression: Data compression (include "std/compression")
-// - socket: Network sockets (include "std/socket")
-// - dotenv: Environment variable files (include "std/dotenv")
-// - core: Core language primitives (include "std/core")
+include "std/option";
+include "std/result";

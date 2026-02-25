@@ -1,0 +1,21 @@
+// =============================================================================
+// std.mem
+// Memory management module - entry point for memory utilities.
+// 
+// This module provides:
+// - Arena: Bump allocator for deterministic deallocation
+// - GC: Mark-sweep garbage collector
+// - Alloc: Low-level allocation functions
+// - Buffer: Dynamic byte buffer
+// =============================================================================
+
+// Re-export from submodules
+include "std/mem/alloc";
+include "std/mem/arena";
+include "std/mem/gc";
+include "std/mem/buffer";
+
+// Module version
+fn mem_version() -> str {
+    return "0.1.0";
+}

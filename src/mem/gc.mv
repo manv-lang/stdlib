@@ -1,0 +1,322 @@
+// =============================================================================
+// std.mem.gc
+// Garbage collector for automatic memory management.
+// =============================================================================
+
+include "std/mem/alloc";
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+int GC_DEFAULT_THRESHOLD = 1048576;  // 1MB
+int GC_GROW_FACTOR = 2;
+int GC_MIN_THRESHOLD = 65536;        // 64KB
+
+// Type IDs for GC
+int TYPE_ID_INT = 1;
+int TYPE_ID_FLOAT = 2;
+int TYPE_ID_BOOL = 3;
+int TYPE_ID_BYTE = 4;
+int TYPE_ID_STR = 5;
+int TYPE_ID_ARRAY = 16;
+int TYPE_ID_STRUCT = 32;
+int TYPE_ID_GC_WRAPPER = 48;
+int TYPE_ID_USER = 64;
+
+// GC header flags
+int GC_FLAG_MANAGED = 0x01;
+int GC_FLAG_MARKED = 0x02;
+int GC_FLAG_ARRAY = 0x04;
+int GC_FLAG_FINALIZER = 0x08;
+
+// -----------------------------------------------------------------------------
+// GC Object Header
+// -----------------------------------------------------------------------------
+
+struct GCObjectHeader {
+    type_id: int;          // Type identifier for tracing
+    flags: int;            // GC flags (managed, marked, etc.)
+    size: int;             // Payload size
+    next: GCObjectHeader*; // Next object in allocation list
+    finalizer: fn(void*) -> void;  // Optional finalizer
+}
+
+// -----------------------------------------------------------------------------
+// GC Type - Mark-sweep garbage collector
+// -----------------------------------------------------------------------------
+
+struct GC {
+    objects: GCObjectHeader*;  // List of all allocated objects
+    count: int;                // Number of objects
+    total_size: int;           // Total bytes allocated
+    threshold: int;            // Collection threshold
+    paused: bool;              // GC paused state
+    collections: int;          // Number of collections performed
+}
+
+impl GC {
+    // Initialize GC with default threshold
+    constructor() {
+        self.objects = 0;
+        self.count = 0;
+        self.total_size = 0;
+        self.threshold = GC_DEFAULT_THRESHOLD;
+        self.paused = false;
+        self.collections = 0;
+    }
+    
+    // Create new GC instance
+    fn new() -> GC* {
+        GC* gc = new GC();
+        gc.objects = 0;
+        gc.count = 0;
+        gc.total_size = 0;
+        gc.threshold = GC_DEFAULT_THRESHOLD;
+        gc.paused = false;
+        gc.collections = 0;
+        return gc;
+    }
+    
+    // Create GC with custom threshold
+    fn with_threshold(threshold: int) -> GC* {
+        GC* gc = GC.new();
+        gc.threshold = threshold;
+        return gc;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Core Allocation
+    // -------------------------------------------------------------------------
+    
+    // Allocate an object with type info
+    fn alloc(self, size: int, type_id: int) -> void* {
+        return self.alloc_aligned(size, type_id, 8);
+    }
+    
+    // Allocate aligned object
+    fn alloc_aligned(self, size: int, type_id: int, alignment: int) -> void* {
+        // Check if collection needed
+        if (!self.paused && self.total_size > self.threshold) {
+            self.collect();
+        }
+        
+        // Use intrinsic for allocation
+        void* ptr = __gc_alloc(size, type_id, alignment);
+        
+        if (ptr == 0) {
+            return 0;
+        }
+        
+        // Track in our list
+        self.count = self.count + 1;
+        self.total_size = self.total_size + size + 16;  // payload + header
+        
+        return ptr;
+    }
+    
+    // Allocate typed object
+    fn alloc_typed<T>(self) -> T* {
+        return self.alloc(sizeof(T), TYPE_ID_USER);
+    }
+    
+    // Allocate array
+    fn alloc_array<T>(self, count: int) -> T* {
+        int size = sizeof(T) * count;
+        T* arr = self.alloc(size, TYPE_ID_ARRAY | TYPE_ID_USER);
+        return arr;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Mark Phase
+    // -------------------------------------------------------------------------
+    
+    // Mark an object as reachable
+    fn mark(self, ptr: void*) -> void {
+        if (ptr == 0) {
+            return;
+        }
+        __gc_mark(ptr);
+    }
+    
+    // Mark multiple objects
+    fn mark_many(self, ptrs: void**, count: int) -> void {
+        int i = 0;
+        while (i < count) {
+            self.mark(ptrs[i]);
+            i = i + 1;
+        }
+    }
+    
+    // -------------------------------------------------------------------------
+    // Sweep and Collection
+    // -------------------------------------------------------------------------
+    
+    // Sweep unmarked objects
+    fn sweep(self) -> int {
+        int freed = 0;
+        
+        // Use the intrinsic-based collection
+        freed = __gc_collect();
+        
+        if (freed > 0) {
+            self.count = self.count - freed;
+        }
+        
+        return freed;
+    }
+    
+    // Run garbage collection
+    fn collect(self) -> int {
+        self.collections = self.collections + 1;
+        int freed = self.sweep();
+        
+        // Adjust threshold
+        if (self.total_size < self.threshold / GC_GROW_FACTOR) {
+            self.threshold = self.threshold / GC_GROW_FACTOR;
+            if (self.threshold < GC_MIN_THRESHOLD) {
+                self.threshold = GC_MIN_THRESHOLD;
+            }
+        } else if (self.total_size > self.threshold) {
+            self.threshold = self.total_size * GC_GROW_FACTOR;
+        }
+        
+        return freed;
+    }
+    
+    // Force full collection
+    fn collect_full(self) -> int {
+        int total_freed = 0;
+        int freed;
+        
+        freed = self.collect();
+        total_freed = total_freed + freed;
+        
+        while (freed > 0) {
+            freed = self.collect();
+            total_freed = total_freed + freed;
+        }
+        
+        return total_freed;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Control
+    // -------------------------------------------------------------------------
+    
+    // Pause GC
+    fn pause(self) -> void {
+        self.paused = true;
+    }
+    
+    // Resume GC
+    fn resume(self) -> void {
+        self.paused = false;
+    }
+    
+    // Check if paused
+    fn is_paused(self) -> bool {
+        return self.paused;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Statistics
+    // -------------------------------------------------------------------------
+    
+    fn get_count(self) -> int {
+        return self.count;
+    }
+    
+    fn get_size(self) -> int {
+        return self.total_size;
+    }
+    
+    fn get_threshold(self) -> int {
+        return self.threshold;
+    }
+    
+    fn get_collections(self) -> int {
+        return self.collections;
+    }
+    
+    fn set_threshold(self, threshold: int) -> void {
+        self.threshold = threshold;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Finalizers
+    // -------------------------------------------------------------------------
+    
+    // Register finalizer for an object
+    fn set_finalizer(self, ptr: void*, finalizer: fn(void*) -> void) -> void {
+        GCObjectHeader* header = __gc_get_header(ptr);
+        header.finalizer = finalizer;
+        header.flags = header.flags | GC_FLAG_FINALIZER;
+    }
+}
+
+// -----------------------------------------------------------------------------
+// GCRef Type - GC-managed reference
+// -----------------------------------------------------------------------------
+
+struct GCRef<T> {
+    gc: GC*;
+    ptr: T*;
+}
+
+impl GCRef<T> {
+    constructor(gc: GC*, ptr: T*) {
+        self.gc = gc;
+        self.ptr = ptr;
+    }
+    
+    // Get raw pointer
+    fn get(self) -> T* {
+        return self.ptr;
+    }
+    
+    // Dereference
+    fn deref(self) -> T {
+        return *self.ptr;
+    }
+    
+    // Check validity
+    fn is_valid(self) -> bool {
+        return self.gc != 0 && self.ptr != 0;
+    }
+    
+    // Mark as reachable
+    fn mark(self) -> void {
+        if self.gc != 0 && self.ptr != 0 {
+            self.gc.mark(self.ptr);
+        }
+    }
+    
+    // Get reference to field
+    fn field<F>(self, offset: int) -> GCRef<F> {
+        return GCRef<F>(self.gc, (F*)(self.ptr + offset));
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Global GC Instance
+// -----------------------------------------------------------------------------
+
+GC* __global_gc = 0;
+
+// Get or create global GC
+fn get_gc() -> GC* {
+    if (__global_gc == 0) {
+        __global_gc = GC.new();
+    }
+    return __global_gc;
+}
+
+// Convenience allocation
+fn gc_alloc(size: int, type_id: int) -> void* {
+    return get_gc().alloc(size, type_id);
+}
+
+fn gc_alloc_typed<T>() -> T* {
+    return get_gc().alloc_typed<T>();
+}

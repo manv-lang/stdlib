@@ -1,0 +1,167 @@
+// =============================================================================
+// Example: std.core Module
+// Description: Demonstrates utility functions for integer and float operations
+// =============================================================================
+//
+// The core module provides foundational utility functions that don't require
+// OS involvement. It includes mathematical helpers for both integers and floats.
+//
+// Usage:
+//   include "std/core";
+//
+// Integer Functions:
+//   abs(val)          - Absolute value
+//   max(a, b)         - Maximum of two values
+//   min(a, b)         - Minimum of two values
+//   clamp(val, lo, hi) - Clamp value to range [lo, hi]
+//
+// Float Functions:
+//   abs_f(val)        - Absolute value for floats
+//   max_f(a, b)       - Maximum of two floats
+//   min_f(a, b)       - Minimum of two floats
+//   clamp_f(val, lo, hi) - Clamp float to range
+// =============================================================================
+
+include "std/core";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: abs() - Absolute Value
+    // -------------------------------------------------------------------------
+    // Get the absolute (positive) value of an integer
+    int neg_num = -42;
+    int pos_num = abs(neg_num);  // pos_num = 42
+    
+    int already_pos = 10;
+    int still_pos = abs(already_pos);  // still_pos = 10
+    
+    // Verify
+    if (pos_num != 42) {
+        return 1;
+    }
+    if (still_pos != 10) {
+        return 2;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 2: max() and min() - Compare Values
+    // -------------------------------------------------------------------------
+    // Find the maximum of two integers
+    int a = 10;
+    int b = 20;
+    int maximum = max(a, b);  // maximum = 20
+    int minimum = min(a, b);  // minimum = 10
+    
+    // Works with negative numbers too
+    int c = -5;
+    int d = -10;
+    int max_neg = max(c, d);  // max_neg = -5 (less negative = greater)
+    
+    // Verify
+    if (maximum != 20) {
+        return 3;
+    }
+    if (minimum != 10) {
+        return 4;
+    }
+    if (max_neg != -5) {
+        return 5;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 3: clamp() - Restrict Value to Range
+    // -------------------------------------------------------------------------
+    // Clamp ensures a value stays within [lo, hi] bounds
+    
+    // Value within range - unchanged
+    int clamped1 = clamp(5, 0, 10);  // clamped1 = 5
+    
+    // Value below range - set to minimum
+    int clamped2 = clamp(-5, 0, 10);  // clamped2 = 0
+    
+    // Value above range - set to maximum
+    int clamped3 = clamp(15, 0, 10);  // clamped3 = 10
+    
+    // Useful for array indexing
+    int index = 100;
+    int safe_index = clamp(index, 0, 9);  // safe_index = 9
+    
+    // Verify
+    if (clamped1 != 5) {
+        return 6;
+    }
+    if (clamped2 != 0) {
+        return 7;
+    }
+    if (clamped3 != 10) {
+        return 8;
+    }
+    if (safe_index != 9) {
+        return 9;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 4: Float Operations
+    // -------------------------------------------------------------------------
+    // Same operations work for floats with _f suffix
+    
+    // Absolute value
+    float neg_float = -3.14;
+    float pos_float = abs_f(neg_float);  // pos_float = 3.14
+    
+    // Max and min
+    float f1 = 1.5;
+    float f2 = 2.5;
+    float f_max = max_f(f1, f2);  // f_max = 2.5
+    float f_min = min_f(f1, f2);  // f_min = 1.5
+    
+    // Clamp
+    float f_clamped = clamp_f(5.0, 0.0, 1.0);  // f_clamped = 1.0
+    
+    // Verify
+    if (pos_float < 3.0) {
+        return 10;
+    }
+    if (f_max < 2.0) {
+        return 11;
+    }
+    if (f_min > 2.0) {
+        return 12;
+    }
+    if (f_clamped < 0.9 || f_clamped > 1.1) {
+        return 13;
+    }
+    
+    // -------------------------------------------------------------------------
+    // Example 5: Practical Use Cases
+    // -------------------------------------------------------------------------
+    
+    // Ensure a percentage is valid (0-100)
+    int raw_percent = 150;
+    int valid_percent = clamp(raw_percent, 0, 100);  // valid_percent = 100
+    
+    // Find the difference between two values
+    int x1 = 10;
+    int x2 = 25;
+    int diff = abs(x2 - x1);  // diff = 15
+    
+    // Determine if value is closer to min or max
+    int val = 7;
+    int lower = 0;
+    int upper = 10;
+    int closer_to = min(abs(val - lower), abs(val - upper));
+    // closer_to = min(7, 3) = 3 (closer to upper)
+    
+    // Verify
+    if (valid_percent != 100) {
+        return 14;
+    }
+    if (diff != 15) {
+        return 15;
+    }
+    if (closer_to != 3) {
+        return 16;
+    }
+    
+    return 0;
+}

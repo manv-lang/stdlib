@@ -1,0 +1,37 @@
+impl array<T> {
+    fn len(self) -> uint {
+        return 0;
+    }
+
+    fn is_empty(self) -> bool {
+        return false;
+    }
+
+    fn capacity(self) -> uint {
+        return 0;
+    }
+
+    fn get(self, uint index) -> Option<T> {
+        return 0;
+    }
+
+    fn push(self, T value) -> void {
+        return;
+    }
+
+    fn pop(self) -> Option<T> {
+        return 0;
+    }
+
+    fn clear(self) -> void {
+        return;
+    }
+
+    fn reserve(self, uint additional) -> void {
+        return;
+    }
+
+    fn as_ptr(self) -> T* {
+        return 0;
+    }
+}

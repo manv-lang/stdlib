@@ -1,0 +1,29 @@
+impl Result<T, E> {
+    fn map(self, void* fn_ptr) -> Result<T, E> {
+        return self;
+    }
+
+    fn map_err(self, void* fn_ptr) -> Result<T, E> {
+        return self;
+    }
+
+    fn and_then(self, void* fn_ptr) -> Result<T, E> {
+        return self;
+    }
+
+    fn unwrap_or(self, T default_value) -> T {
+        return default_value;
+    }
+
+    fn unwrap_or_else(self, void* fn_ptr) -> T {
+        return 0;
+    }
+
+    fn ok(self) -> Option<T> {
+        return 0;
+    }
+
+    fn err(self) -> Option<E> {
+        return 0;
+    }
+}

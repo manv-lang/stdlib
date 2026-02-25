@@ -1,0 +1,157 @@
+// =============================================================================
+// Example: std.assert Module
+// Description: Demonstrates assertion and panic functions for error handling
+// =============================================================================
+//
+// The assert module provides functions for validating conditions and handling
+// unrecoverable errors. When assertions fail, the program terminates.
+//
+// Usage:
+//   include "std/assert";
+//
+// Assertion Functions:
+//   assert(condition, msg)        - Assert condition is true
+//   assert_true(condition, msg)   - Assert condition is true
+//   assert_false(condition, msg)  - Assert condition is false
+//   assert_eq(expected, actual, msg) - Assert values are equal
+//   assert_ne(expected, actual, msg) - Assert values are not equal
+//   assert_null(ptr, msg)         - Assert pointer is null
+//   assert_not_null(ptr, msg)     - Assert pointer is not null
+//   debug_assert(condition, msg)  - Assert only in debug builds
+//
+// Panic Functions:
+//   panic(msg)                    - Abort with error message
+//   unreachable(msg)              - Mark code as unreachable
+//   todo(msg)                     - Mark unimplemented code
+//   unimplemented(msg)            - Mark unimplemented feature
+// =============================================================================
+
+include "std/assert";
+
+fn main() -> int {
+    // -------------------------------------------------------------------------
+    // Example 1: Basic Assertions
+    // -------------------------------------------------------------------------
+    // assert() checks a condition and panics if false
+    
+    int x = 10;
+    assert(x > 0, "x should be positive");  // Passes
+    assert(x < 100, "x should be less than 100");  // Passes
+    
+    // -------------------------------------------------------------------------
+    // Example 2: assert_true and assert_false
+    // -------------------------------------------------------------------------
+    
+    bool is_valid = true;
+    assert_true(is_valid, "is_valid should be true");
+    
+    bool is_invalid = false;
+    assert_false(is_invalid, "is_invalid should be false");
+    
+    // -------------------------------------------------------------------------
+    // Example 3: assert_eq and assert_ne
+    // -------------------------------------------------------------------------
+    // Compare values for equality/inequality
+    
+    int result = 42;
+    assert_eq(42, result, "result should equal 42");
+    
+    int different = 10;
+    assert_ne(result, different, "result and different should not be equal");
+    
+    // -------------------------------------------------------------------------
+    // Example 4: assert_null and assert_not_null
+    // -------------------------------------------------------------------------
+    // Check pointer values
+    
+    int value = 10;
+    int* valid_ptr = &value;
+    assert_not_null(valid_ptr, "valid_ptr should not be null");
+    
+    int* null_ptr = 0;
+    assert_null(null_ptr, "null_ptr should be null");
+    
+    // -------------------------------------------------------------------------
+    // Example 5: Using Assertions for Preconditions
+    // -------------------------------------------------------------------------
+    // Validate function inputs
+    
+    // Simulating a function with preconditions
+    int divide(int a, int b) -> int {
+        assert(b != 0, "Division by zero is not allowed");
+        return a / b;
+    }
+    
+    int quotient = divide(10, 2);  // quotient = 5
+    assert_eq(5, quotient, "10 / 2 should equal 5");
+    
+    // -------------------------------------------------------------------------
+    // Example 6: Using Assertions for Postconditions
+    // -------------------------------------------------------------------------
+    // Validate function outputs
+    
+    int double_value(int n) -> int {
+        int doubled = n * 2;
+        assert(doubled > n || n <= 0, "Doubled value should be greater (for positive n)");
+        return doubled;
+    }
+    
+    int doubled_result = double_value(5);  // doubled_result = 10
+    assert_eq(10, doubled_result, "double_value(5) should return 10");
+    
+    // -------------------------------------------------------------------------
+    // Example 7: debug_assert for Development
+    // -------------------------------------------------------------------------
+    // debug_assert only runs when DEBUG_ENABLED is true
+    
+    int internal_value = 100;
+    debug_assert(internal_value >= 0, "internal_value should be non-negative");
+    
+    // -------------------------------------------------------------------------
+    // Example 8: Practical Validation Pattern
+    // -------------------------------------------------------------------------
+    
+    // Validate array index
+    int get_safe_index(int index, int array_len) -> int {
+        assert(index >= 0, "Index cannot be negative");
+        assert(index < array_len, "Index out of bounds");
+        return index;
+    }
+    
+    int safe_idx = get_safe_index(2, 5);  // safe_idx = 2
+    assert_eq(2, safe_idx, "Safe index should be 2");
+    
+    // -------------------------------------------------------------------------
+    // Example 9: Validation with Meaningful Messages
+    // -------------------------------------------------------------------------
+    
+    int process_age(int age) -> int {
+        assert(age >= 0, "Age cannot be negative");
+        assert(age <= 150, "Age seems unrealistic (max 150)");
+        return age;
+    }
+    
+    int valid_age = process_age(25);
+    assert_eq(25, valid_age, "Processed age should match input");
+    
+    // -------------------------------------------------------------------------
+    // Example 10: Invariants
+    // -------------------------------------------------------------------------
+    // Assert conditions that should always be true
+    
+    int counter = 0;
+    
+    // Increment and check invariant
+    counter = counter + 1;
+    assert(counter >= 0 && counter <= 100, "Counter should be in valid range");
+    
+    // -------------------------------------------------------------------------
+    // Note: The following functions would cause the program to terminate:
+    // -------------------------------------------------------------------------
+    // panic("This would abort the program");
+    // unreachable("This code should never execute");
+    // todo("This feature is not yet implemented");
+    // unimplemented("This is a placeholder");
+    
+    return 0;
+}

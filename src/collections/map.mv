@@ -1,0 +1,29 @@
+impl Map<K, V> {
+    fn len(self) -> uint {
+        return 0;
+    }
+
+    fn is_empty(self) -> bool {
+        return false;
+    }
+
+    fn contains_key(self, K key) -> bool {
+        return false;
+    }
+
+    fn get(self, K key) -> Option<V> {
+        return 0;
+    }
+
+    fn insert(self, K key, V value) -> Option<V> {
+        return 0;
+    }
+
+    fn remove(self, K key) -> Option<V> {
+        return 0;
+    }
+
+    fn clear(self) -> void {
+        return;
+    }
+}

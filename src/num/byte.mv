@@ -1,0 +1,29 @@
+impl u8 {
+    fn count_ones(self) -> uint {
+        return 0;
+    }
+
+    fn count_zeros(self) -> uint {
+        return 0;
+    }
+
+    fn rotate_left(self, uint amount) -> byte {
+        return self;
+    }
+
+    fn rotate_right(self, uint amount) -> byte {
+        return self;
+    }
+
+    fn to_hex(self) -> String {
+        return "00";
+    }
+
+    fn to_int(self) -> int {
+        return self;
+    }
+
+    fn to_uint(self) -> uint {
+        return self;
+    }
+}

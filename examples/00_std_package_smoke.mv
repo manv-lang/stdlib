@@ -1,0 +1,21 @@
+// std package smoke example
+// Verifies include "std" and alias types from std/types.
+
+include "std";
+
+fn main() -> int {
+    int signed_value = -3;
+    uint count = 4;
+    byte raw = 2;
+    float ratio = 0.5;
+
+    if (signed_value < 0) {
+        signed_value = 0 - signed_value;
+    }
+
+    if (ratio > 0.0) {
+        signed_value = signed_value + count + raw;
+    }
+
+    return signed_value;
+}
